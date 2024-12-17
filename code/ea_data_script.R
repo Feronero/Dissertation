@@ -280,25 +280,25 @@
 	## Transpose Catchment Data to Wide Format ----
 	{
 		RIVER_hayle_wide <- reshape(
-			RIVER_hayle,
+			subset_hayle,
 			idvar = "Sample_Type_Time",
 			timevar = "Measure_Unit",
 			direction = "wide"
 		)
 		RIVER_cober_wide <- reshape(
-			RIVER_cober,
+			subset_cober,
 			idvar = "Sample_Type_Time",
 			timevar = "Measure_Unit",
 			direction = "wide"
 		)
 		RIVER_red_wide <- reshape(
-			RIVER_red,
+			subset_red,
 			idvar = "Sample_Type_Time",
 			timevar = "Measure_Unit",
 			direction = "wide"
 		)
 		RIVER_carnon_wide <- reshape(
-			RIVER_carnon,
+			subset_carnon,
 			idvar = "Sample_Type_Time",
 			timevar = "Measure_Unit",
 			direction = "wide"
