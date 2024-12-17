@@ -115,37 +115,37 @@
 		)
 	}
 
-	## Extract and Search Water Quality Parameters ----
+	## Extract and Select Water Quality Parameters ----
 	{
-		# all water quality paramers
+		# extract all parameters
 		all_params = data.frame(
 			all_params = unique(
 				ea_data$determinand.definition
 			)
 		)
-		# parameters containing specific keywords
+		# define selected_parameters
 		selected_params = data.frame(
 			selected_params = c(
 				# copper
-				all_params[
+				all_params$all_params[
 					grep(
 						pattern = "Copper",
-						x = all_params
-					),
+						x = all_params$all_params
+					)
 				],
 				# iron
-				all_params[
+				all_params$all_params[
 					grep(
 						pattern = "Iron",
-						x = all_params
-					),
+						x = all_params$all_params
+					)
 				],
 				# cadmium
-				all_params[
+				all_params$all_params[
 					grep(
 						pattern = "Cadmium",
-						x = all_params
-					),
+						x = all_params$all_params
+					)
 				]
 			)
 		)
@@ -233,6 +233,46 @@
 						collapse = "|"
 					),
 					x = RIVER$sample.samplingPoint.notation
+				),
+			]
+		}
+	
+		# subset catchment by selected_parameters
+		{
+			subset_hayle <- RIVER_hayle[
+				grepl(
+					pattern = paste(
+						selected_params,
+						collapse = "|"
+					),
+					x = RIVER_hayle$determinand.definition
+				),
+			]
+			subset_cober <- RIVER_cober[
+				grepl(
+					pattern = paste(
+						selected_params,
+						collapse = "|"
+					),
+					x = RIVER_cober$determinand.definition
+				),
+			]
+			subset_red <- RIVER_red[
+				grepl(
+					pattern = paste(
+						selected_params,
+						collapse = "|"
+					),
+					x = RIVER_red$determinand.definition
+				),
+			]
+			subset_carnon <- RIVER_carnon[
+				grepl(
+					pattern = paste(
+						selected_params,
+						collapse = "|"
+					),
+					x = RIVER_carnon$determinand.definition
 				),
 			]
 		}
