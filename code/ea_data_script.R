@@ -9,36 +9,34 @@
 		library(ggplot2)
 	}
 
-# Data Import ----
-
-	# Import Sample Data ----
+# User-Defined Terms ----
+	
 	{
-		# import sample metadata
-		sample_metadata <- read.csv(
-			file = "raw_data/sample_metadata_blanks_removed.csv",
-			stringsAsFactors = TRUE
+		# catchment names in desired order
+		catchments <- c(
+			"hayle",
+			"cober",
+			"red",
+			"carnon"
 		)
-		# import ASV data across all taxonomic levels
-		asv_table <- read.csv(
-			"raw_data/asv_table.csv"
+		# water sample types of interest
+		water_types_of_interest <- c(
+			"MINEWATER",
+			"GROUNDWATER",
+			"RIVER / RUNNING SURFACE WATER",
+			"WATER"
 		)
-		# import ASV data filtered by each taxonomic level, and bundle them into a list
-		ASVs <- list(
-			level_2 = read.csv("raw_data/level_2.csv"),
-			level_3 = read.csv("raw_data/level_3.csv"),
-			level_4 = read.csv("raw_data/level_4.csv"),
-			level_5 = read.csv("raw_data/level_5.csv"),
-			level_6 = read.csv("raw_data/level_6.csv")
+		# water quality parameters of interest
+		params_of_interest <- c(
+			"Copper",
+			"Iron",
+			"Cadmium"
 		)
-		# rename the index column to match "sample_metadata"
-		for (i in 1:length(ASVs)) {
-			colnames(ASVs[[i]])[1] <- "SampleID"
-		}
-		# check output
-		print(ASVs[[1]][1:4,1:4])
 	}
 
-	# Import EA Data ----
+# Data Import ----
+
+	## Import EA Data ----
 	{
 		# input oldest year
 		oldest <- 2013
@@ -60,7 +58,7 @@
 		ea_data <- do.call(
 			rbind, ea_data
 		)
-		# create seperate year, month, time columns
+		# create sepearate year, month, time columns
 		ea_data[c('Year', 'Month', 'Time')] <- str_split_fixed(
 			ea_data$sample.sampleDateTime, '-', 3)
 		# create year_month column
@@ -77,233 +75,162 @@
 		rm(oldest, newest)
 	}
 
-	# Import Sampling Points by Catchment ----
+	## Remove Un-Needed Columns ----
 	{
-		sp_by_catchment <- list(
-			sp_hayle = read.csv(
-				"raw_data/sp_hayle.csv",
+		ea_data_trimmed <- ea_data
+		# trims identically to tamsyn, except replaces determinand.label with determinand.definition
+		ea_data_trimmed <- ea_data_trimmed[
+			-c(1,2,4,6,8,9,11,14:17)
+		]
+	}
+
+	## Import Sampling Points by Catchment ----
+	{
+		# initialise storage list
+		sp_by_catchment <- list()
+		for (i in 1:4) {
+			# sequentially import each set of sampling points
+			sp_by_catchment[[i]] <- read.csv(
+				paste0(
+					"raw_data/sp_", catchments[i], ".csv"
+				),
 				header = TRUE
-			),
-			sp_cober = read.csv(
-				"raw_data/sp_cober.csv",
-				header = TRUE
-			),
-			sp_red = read.csv(
-				"raw_data/sp_red.csv",
-				header = TRUE
-			),
-			sp_carnon = read.csv(
-				"raw_data/sp_carnon.csv",
-				header = TRUE
-			)	
-		)
+			)
+		}
+		# name each set by their catchment
+		names(sp_by_catchment) <- catchments
 	}
 
 # Data Wrangling ----
 
-	## Order Metadata Factor Levels ----
-	{
-		# order "Month" column
-		sample_metadata$Month <- droplevels(
-			factor(
-				x = as.factor(
-					sample_metadata$Month
-				),
-				levels = month.name,
-				ordered = TRUE
-			)
-		)
-	}
-
 	## Extract and Select Water Quality Parameters ----
 	{
-		# extract all parameters
-		all_params = data.frame(
+		# initialise parameter storage list
+		parameters <- list(
+			# extract and store all parameters
 			all_params = unique(
-				ea_data$determinand.definition
-			)
+				ea_data_trimmed$determinand.definition
+			),
+			selected_params = character()
 		)
-		# define selected_parameters
-		selected_params = data.frame(
-			selected_params = c(
-				# copper
-				all_params$all_params[
+		# extract and store parameters of interest
+		for (i in 1:length(params_of_interest)) {
+			parameters$selected_params <- c(
+				parameters$selected_params,
+				parameters$all_params[
 					grep(
-						pattern = "Copper",
-						x = all_params$all_params
-					)
-				],
-				# iron
-				all_params$all_params[
-					grep(
-						pattern = "Iron",
-						x = all_params$all_params
-					)
-				],
-				# cadmium
-				all_params$all_params[
-					grep(
-						pattern = "Cadmium",
-						x = all_params$all_params
+						pattern = params_of_interest[i],
+						x = parameters$all_params
 					)
 				]
 			)
-		)
+		}
+		# clean up temporary objects
+		rm(params_of_interest)
 	}
 
 	## Subset EA Data by Water Type ----
 	{
-		# subset by row where sample type == MINEWATER
-		MINEWATER <- ea_data[
-			grep(
-				pattern = "MINEWATER",
-				x = ea_data$sample.sampledMaterialType.label
-			),
-		]
-		# subset by row where sample type == GROUNDWATER
-		GROUNDWATER <- ea_data[
-			grep(
-				pattern = "GROUNDWATER",
-				x = ea_data$sample.sampledMaterialType.label
-			),
-		]
-		# subset by row where sample type == SURFACE / RUNNING SURFACE WATER
-		RIVER <- ea_data[
-			grep(
-				pattern = "RIVER / RUNNING SURFACE WATER",
-				x = ea_data$sample.sampledMaterialType.label
-			),
-		]
-		# subset by row where sample type == WATER
-		ALL_WATER <- ea_data[
-			grep(
-				pattern = "WATER",
-				x = ea_data$sample.sampledMaterialType.label
-			),
-		]
+		# initialise storage list
+		water_types <- list()
+		# extract and store samples from each water type of interest
+		for (i in 1:length(water_types_of_interest)) {
+			water_types[[i]] <- ea_data_trimmed[
+				grep(
+					pattern = water_types_of_interest[i],
+					x = ea_data_trimmed$sample.sampledMaterialType.label
+				),
+			]
+			# remove redundant "water type" column
+			water_types[[i]] <- water_types[[i]][, -6]
+		}
+		# name each water type
+		names(water_types) <- water_types_of_interest
 	}
 
-	## Subset Water Type by Catchment ----
-	
-		### subset RIVER water by catchment ----
-		
-			# fetches sampling point IDs from a specific catchment
-			# joins fetched IDs into a single vector
-			# marks each join with "|", which acts as an OR operator
-			# searches RIVER sampling points for rows with matching IDs
-			# saves matching rows to a catchment-specific object
-			# RIVER is now filtered by catchment
-
-		{
-			# search RIVER for sampling point IDs in the "sp_hayle" data frame
-			RIVER_hayle <- RIVER[
-				grepl(
+	## Subset River Water by Catchment ----
+	{
+		# initialise storage list
+		river_by_catchment <- list()
+		for (i in 1:length(catchments)) {
+			river_by_catchment[[i]] <- subset(
+				x = water_types$`RIVER / RUNNING SURFACE WATER`,
+				subset = grepl(
 					pattern = paste(
-						sp_by_catchment[[1]]$notation,
+						sp_by_catchment[[i]]$notation,
 						collapse = "|"
 					),
-					x = RIVER$sample.samplingPoint.notation
-				),
-			]
-			# search RIVER for sampling point IDs in the "sp_cober" data frame
-			RIVER_cober <- RIVER[
-				grepl(
-					pattern = paste(
-						sp_by_catchment[[2]]$northing,
-						collapse = "|"
-					),
-					x = RIVER$sample.samplingPoint.notation
-				),
-			]
-			# search RIVER for sampling point IDs in the "sp_red" data frame
-			RIVER_red <- RIVER[
-				grepl(
-					pattern = paste(
-						sp_by_catchment[[3]]$notation,
-						collapse = "|"
-					),
-					x = RIVER$sample.samplingPoint.notation
-				),
-			]
-			# search RIVER for sampling point IDs in the "sp_carnon" data frame
-			RIVER_carnon <- RIVER[
-				grepl(
-					pattern = paste(
-						sp_by_catchment[[4]]$notation,
-						collapse = "|"
-					),
-					x = RIVER$sample.samplingPoint.notation
-				),
-			]
+					x = water_types$`RIVER / RUNNING SURFACE WATER`$sample.samplingPoint.notation
+				)
+			)
 		}
+		names(river_by_catchment) <- catchments
+	}
 	
-		# subset catchment by selected_parameters
-		{
-			subset_hayle <- RIVER_hayle[
-				grepl(
+	## Subset Catchment by selected_parameters ----
+	{
+		catchment_and_params <- list()
+		for (i in 1:length(catchments)) {
+			catchment_and_params[[i]] <- subset(
+				x = river_by_catchment[[i]],
+				subset = grepl(
 					pattern = paste(
-						selected_params,
+						parameters$selected_params,
 						collapse = "|"
 					),
-					x = RIVER_hayle$determinand.definition
-				),
-			]
-			subset_cober <- RIVER_cober[
-				grepl(
-					pattern = paste(
-						selected_params,
-						collapse = "|"
-					),
-					x = RIVER_cober$determinand.definition
-				),
-			]
-			subset_red <- RIVER_red[
-				grepl(
-					pattern = paste(
-						selected_params,
-						collapse = "|"
-					),
-					x = RIVER_red$determinand.definition
-				),
-			]
-			subset_carnon <- RIVER_carnon[
-				grepl(
-					pattern = paste(
-						selected_params,
-						collapse = "|"
-					),
-					x = RIVER_carnon$determinand.definition
-				),
-			]
+					x = river_by_catchment[[i]]$determinand.definition
+				)
+			)
 		}
+		# appropriately name list items
+		names(catchment_and_params) <- catchments
+		# remove un-need columns
+		for(i in 1:length(catchments)) {
+			catchment_and_params[[i]] <- subset(
+				x = catchment_and_params[[i]],
+				select = c(
+					result,
+					Sample_Type_Time,
+					Measure_Unit
+				)
+			)
+		}
+	}
 	
 	## Transpose Catchment Data to Wide Format ----
 	{
-		subset_hayle_wide <- reshape(
-			subset_hayle,
-			idvar = "Sample_Type_Time",
-			timevar = "Measure_Unit",
-			direction = "wide"
-		)
-		subset_cober_wide <- reshape(
-			subset_cober,
-			idvar = "Sample_Type_Time",
-			timevar = "Measure_Unit",
-			direction = "wide"
-		)
-		subset_red_wide <- reshape(
-			subset_red,
-			idvar = "Sample_Type_Time",
-			timevar = "Measure_Unit",
-			direction = "wide"
-		)
-		subset_carnon_wide <- reshape(
-			subset_carnon,
-			idvar = "Sample_Type_Time",
-			timevar = "Measure_Unit",
-			direction = "wide"
-		)
+		catchment_params_wide <- list()
+		for (i in 1:length(catchments)) {
+			catchment_params_wide[[i]] <- reshape(
+				data = catchment_and_params[[i]],
+				idvar = "Sample_Type_Time",
+				timevar = "Measure_Unit",
+				direction = "wide"
+			)
+		}
+		names(catchment_params_wide) <- catchments
 	}
+
+	
+new_cols <- as.data.frame(str_split_fixed(catchment_params_wide$hayle$Sample_Type_Time, "_", 2))
+wide_hayle$Sample <-paste(new_cols$V1, new_cols$V2, sep="_")
+wide_hayle$Site <- new_cols$V1
+wide_hayle$Time <- new_cols$V2
+
+new_cols1 <- as.data.frame(str_split_fixed(wide_red$Sample_Type_Time, "_", 2))
+wide_red$Sample <-paste(new_cols1$V1, new_cols1$V2, sep="_")
+wide_red$Site <- new_cols1$V1
+wide_red$Time <- new_cols1$V2
+
+new_cols2 <- as.data.frame(str_split_fixed(wide_carnon$Sample_Type_Time, "_", 2))
+wide_carnon$Sample <-paste(new_cols2$V1, new_cols2$V2, sep="_")
+wide_carnon$Site <- new_cols2$V1
+wide_carnon$Time <- new_cols2$V2
+
+new_cols3 <- as.data.frame(str_split_fixed(wide_cober$Sample_Type_Time, "_", 2))
+wide_cober$Sample <-paste(new_cols3$V1, new_cols3$V2, sep="_")
+wide_cober$Site <- new_cols3$V1
+wide_cober$Time <- new_cols3$V2
 
 # Calculate Linear Regressions ----
 
