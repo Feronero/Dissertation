@@ -7,6 +7,8 @@
 		library(stringr)
 #		install.packages("ggplot2")
 		library(ggplot2)
+#		install.packages("dplyr")
+		library(dplyr)
 	}
 
 # User-Defined Terms ----
@@ -44,72 +46,84 @@
 		newest <- 2024
 		
 		# initialise data storage list
-		ea_data <- list()
+		test_results <- list()
 		# step through each year
 		for (i in oldest:newest) {
-			# sequentially name and import each dataset
-			ea_data[[i]] <- read.csv(
+			# sequentially import each dataset
+			test_results[[i - (oldest - 1)]] <- read.csv(
 				paste0(
 					"raw_data/DC-", i, ".csv"
 				)
 			)
 		}
-		# use do.call to rbind each list item together
-		ea_data <- do.call(
-			rbind, ea_data
+		# rbind each list item together
+		test_results <- do.call(
+			rbind, test_results
 		)
-		# create sepearate year, month, time columns
-		ea_data[c('Year', 'Month', 'Time')] <- str_split_fixed(
-			ea_data$sample.sampleDateTime, '-', 3)
+		# create separate year, month, time columns
+		test_results[c('year', 'month', 'time')] <- str_split_fixed(
+			test_results$sample.sampleDateTime, '-', 3)
 		# create year_month column
-		ea_data$Sample_Type_Time <- paste(
-			ea_data$sample.samplingPoint.notation, ea_data$Year, ea_data$Month,
+		test_results$point_year_month <- paste(
+			test_results$sample.samplingPoint.notation, test_results$year, test_results$month,
 			sep = "_"
 		)
 		# create parameter_unit column
-		ea_data$Measure_Unit <- paste(
-			ea_data$determinand.label, ea_data$determinand.unit.label,
+		test_results$measure_unit <- paste(
+			test_results$determinand.definition, test_results$determinand.unit.label,
 			sep="_"
 		)
+		# tidy up measurement units
+		test_results$measure_unit <- test_results$measure_unit %>%
+			gsub("\\s+", "", .) %>%
+			gsub("-", "_", .) %>%
+			gsub("/", ".", .)
+#		# coerce sample.samplingPoint.notation column to factor
+#		test_results$sample.samplingPoint.notation <- as.factor(
+#			test_results$sample.samplingPoint.notation
+#		)
 		# clean up temporary objects
 		rm(oldest, newest)
-	}
-
-	## Remove Un-Needed Columns ----
-	{
-		ea_data_trimmed <- ea_data
-		# trims identically to tamsyn, except replaces determinand.label with determinand.definition
-		ea_data_trimmed <- ea_data_trimmed[
-			-c(1,2,4,6,8,9,11,14:17)
-		]
 	}
 
 	## Import Sampling Points by Catchment ----
 	{
 		# initialise storage list
-		sp_by_catchment <- list()
-		for (i in 1:4) {
+		all_points <- list()
+		for (i in 1:length(catchments)) {
 			# sequentially import each set of sampling points
-			sp_by_catchment[[i]] <- read.csv(
+			all_points[[i]] <- read.csv(
 				paste0(
 					"raw_data/sp_", catchments[i], ".csv"
 				),
 				header = TRUE
 			)
+			# add a catchment column
+			all_points[[i]]$catchment <- rep(
+				x = catchments[i],
+				length.out = nrow(all_points[[i]])
+			)
 		}
-		# name each set by their catchment
-		names(sp_by_catchment) <- catchments
+		# rbind all sampling points together
+		all_points <- do.call(
+			rbind, all_points
+		)
+		# remove any sampling points from the wrong area
+#		all_points <- subset(
+#			x = all_points,
+#			subset = all_points$area.label == "Devon and Cornwall"
+#		)
 	}
 
 # Data Wrangling ----
 
-	## Extract and Select Water Quality Parameters ----
+	## Water Quality Parameters ----
 	{
 		# initialise parameter storage list
 		parameters <- list(
 			# extract and store all parameters
 			all_params = unique(
-				ea_data_trimmed$determinand.definition
+				test_results$measure_unit
 			),
 			selected_params = character()
 		)
@@ -125,117 +139,81 @@
 				]
 			)
 		}
-		# clean up temporary objects
-		rm(params_of_interest)
 	}
 
-	## Subset EA Data by Water Type ----
+
+	## Refine Data ----
 	{
-		# initialise storage list
-		water_types <- list()
-		# extract and store samples from each water type of interest
-		for (i in 1:length(water_types_of_interest)) {
-			water_types[[i]] <- ea_data_trimmed[
-				grep(
-					pattern = water_types_of_interest[i],
-					x = ea_data_trimmed$sample.sampledMaterialType.label
+		# remove un-needed test_results columns
+		filtered_results <- test_results
+		filtered_results <- filtered_results[-c(1:9,11,12,14:20)]
+		colnames(filtered_results)[2] <- "water_type"
+		# keep only river water measurements
+		filtered_results <- subset(
+			x = filtered_results,
+			subset = water_type == "RIVER / RUNNING SURFACE WATER"
+		)
+		# remove water_type column
+		filtered_results <- filtered_results %>% select(-water_type)
+		# keep only selected parameter measurements
+		filtered_results <- subset(
+			x = filtered_results,
+			subset = grepl(
+				pattern = paste0(
+					parameters$selected_params,
+					collapse = "|"
 				),
-			]
-			# remove redundant "water type" column
-			water_types[[i]] <- water_types[[i]][, -6]
-		}
-		# name each water type
-		names(water_types) <- water_types_of_interest
-	}
-
-	## Subset River Water by Catchment ----
-	{
-		# initialise storage list
-		river_by_catchment <- list()
-		for (i in 1:length(catchments)) {
-			river_by_catchment[[i]] <- subset(
-				x = water_types$`RIVER / RUNNING SURFACE WATER`,
-				subset = grepl(
-					pattern = paste(
-						sp_by_catchment[[i]]$notation,
-						collapse = "|"
-					),
-					x = water_types$`RIVER / RUNNING SURFACE WATER`$sample.samplingPoint.notation
+				x = filtered_results$measure_unit
+			)
+		)
+		# transpose to wide format
+		filtered_results <- reshape(
+			data = filtered_results,
+			idvar = "point_year_month",
+			timevar = "measure_unit",
+			direction = "wide"
+		)
+		# separate point_year_month
+		filtered_results <- cbind(
+			as.data.frame(
+				str_split_fixed(
+					string = filtered_results$point_year_month,
+					pattern = "_",
+					n = 3
 				)
-			)
-		}
-		names(river_by_catchment) <- catchments
-	}
-	
-	## Subset Catchment by selected_parameters ----
-	{
-		catchment_and_params <- list()
-		for (i in 1:length(catchments)) {
-			catchment_and_params[[i]] <- subset(
-				x = river_by_catchment[[i]],
-				subset = grepl(
-					pattern = paste(
-						parameters$selected_params,
-						collapse = "|"
-					),
-					x = river_by_catchment[[i]]$determinand.definition
-				)
-			)
-		}
-		# appropriately name list items
-		names(catchment_and_params) <- catchments
-		# remove un-need columns
-		for(i in 1:length(catchments)) {
-			catchment_and_params[[i]] <- subset(
-				x = catchment_and_params[[i]],
-				select = c(
-					result,
-					Sample_Type_Time,
-					Measure_Unit
-				)
-			)
-		}
-	}
-	
-	## Transpose Catchment Data to Wide Format ----
-	{
-		catchment_params_wide <- list()
-		for (i in 1:length(catchments)) {
-			catchment_params_wide[[i]] <- reshape(
-				data = catchment_and_params[[i]],
-				idvar = "Sample_Type_Time",
-				timevar = "Measure_Unit",
-				direction = "wide"
-			)
-		}
-		names(catchment_params_wide) <- catchments
+			),
+			filtered_results
+		)
+		# name new columns
+		colnames(filtered_results)[1] <- "notation"
+		colnames(filtered_results)[2] <- "year"
+		colnames(filtered_results)[3] <- "month"
+		# remove old column
+		filtered_results <- filtered_results %>% select(-point_year_month)
 	}
 
-	
-new_cols <- as.data.frame(str_split_fixed(catchment_params_wide$hayle$Sample_Type_Time, "_", 2))
-wide_hayle$Sample <-paste(new_cols$V1, new_cols$V2, sep="_")
-wide_hayle$Site <- new_cols$V1
-wide_hayle$Time <- new_cols$V2
-
-new_cols1 <- as.data.frame(str_split_fixed(wide_red$Sample_Type_Time, "_", 2))
-wide_red$Sample <-paste(new_cols1$V1, new_cols1$V2, sep="_")
-wide_red$Site <- new_cols1$V1
-wide_red$Time <- new_cols1$V2
-
-new_cols2 <- as.data.frame(str_split_fixed(wide_carnon$Sample_Type_Time, "_", 2))
-wide_carnon$Sample <-paste(new_cols2$V1, new_cols2$V2, sep="_")
-wide_carnon$Site <- new_cols2$V1
-wide_carnon$Time <- new_cols2$V2
-
-new_cols3 <- as.data.frame(str_split_fixed(wide_cober$Sample_Type_Time, "_", 2))
-wide_cober$Sample <-paste(new_cols3$V1, new_cols3$V2, sep="_")
-wide_cober$Site <- new_cols3$V1
-wide_cober$Time <- new_cols3$V2
-
-# Calculate Linear Regressions ----
-
+	## Extract Sampling Point Metadata ----
 	{
-		
+		filtered_points <- all_points[,c("notation", "lat", "long", "label", "catchment")]
+		filtered_points <- subset(
+			x = filtered_points,
+			subset = grepl(
+				pattern = paste0(
+					unique(filtered_results$notation),
+					collapse = "|"
+				),
+				x = filtered_points$notation
+			)
+		)
+	}
+
+	## Merge Filtered Sampling Point Metadata & Test Result Data ----
+	{
+		filtered_results <- merge(
+			x = filtered_results,
+			y = filtered_points[, c("notation", "label", "catchment")],
+			by = "notation"
+		)
 	}
 
 # Errors and Questions ----
@@ -243,3 +221,6 @@ wide_cober$Time <- new_cols3$V2
 	# I filtered sampling points by catchment using the URL search in my github readme. Is the method suitable?
 	# What parameters did you specify in "some_metals_nutrients" (line 84)
 	# error when widening each catchment's table due to duplicate parameter values. Did this occur for you?
+		# tested this using your script, appears so
+	# site codes in levels(catchment_params_wide$hayle) (line 223 of my script) do not match the string in your script (line 202). Does this indicate a catchment selection error?
+	# Some sampling points are from wrong area - remove them after mapping to confirm
