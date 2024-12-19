@@ -78,10 +78,6 @@
 			gsub("\\s+", "", .) %>%
 			gsub("-", "_", .) %>%
 			gsub("/", ".", .)
-#		# coerce sample.samplingPoint.notation column to factor
-#		test_results$sample.samplingPoint.notation <- as.factor(
-#			test_results$sample.samplingPoint.notation
-#		)
 		# clean up temporary objects
 		rm(oldest, newest)
 	}
@@ -155,7 +151,7 @@
 		)
 		# remove water_type column
 		filtered_results <- filtered_results %>% select(-water_type)
-		# keep only selected parameter measurements
+		# keep only desired parameter measurements
 		filtered_results <- subset(
 			x = filtered_results,
 			subset = grepl(
