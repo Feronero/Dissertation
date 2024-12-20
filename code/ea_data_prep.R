@@ -32,7 +32,8 @@
 		params_of_interest <- c(
 			"Copper",
 			"Iron",
-			"Cadmium"
+			"Cadmium",
+			"Arsenic"
 		)
 	}
 
@@ -201,6 +202,9 @@
 				x = filtered_points$notation
 			)
 		)
+		filtered_points$catchment <- as.factor(
+			filtered_points$catchment
+		)
 	}
 
 	## Merge Filtered Sampling Point Metadata & Test Result Data ----
@@ -220,3 +224,16 @@
 		# tested this using your script, appears so
 	# site codes in levels(catchment_params_wide$hayle) (line 223 of my script) do not match the string in your script (line 202). Does this indicate a catchment selection error?
 	# Some sampling points are from wrong area - remove them after mapping to confirm
+
+
+
+# Operate under assumption that ea data and bacterial data are paired? YES
+# are the pollutants essential metals? Essential metals may be more easily bio-absorbed due to existing metabolic pathways
+# look for clustering of certain metals and env. parameters
+# if time, investigate seasonal effects?
+
+
+# add the following data to filtered_results:
+	# altitude
+	# distance to mouth
+	# order from source to mouth

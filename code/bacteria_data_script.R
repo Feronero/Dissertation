@@ -1,10 +1,6 @@
 # Dependencies ----
 
 	{
-		# set working directory
-		setwd(
-			"~/Documents/University/Year 3/Term 1/Dissertation/R"
-		)
 		# install.packages("vegan")
 		library(vegan)
 	
@@ -17,19 +13,19 @@
 	{
 		# import sample metadata
 		sample_metadata <- read.csv(
-			file = "Data/sample_metadata_ordered.csv"
+			file = "raw_data/sample_metadata_blanks_removed.csv"
 		)
 		# import ASV data across all taxonomic levels
 		asv_table <- read.csv(
-			"Data/asv_table.csv"
+			"raw_data/asv_table.csv"
 		)
 		# import ASV data filtered by each taxonomic level, and bundles them into a list
 		ASVs <- list(
-			level_2 = read.csv("Data/level_2.csv"),
-			level_3 = read.csv("Data/level_3.csv"),
-			level_4 = read.csv("Data/level_4.csv"),
-			level_5 = read.csv("Data/level_5.csv"),
-			level_6 = read.csv("Data/level_6.csv")
+			level_2 = read.csv("raw_data/level_2.csv"),
+			level_3 = read.csv("raw_data/level_3.csv"),
+			level_4 = read.csv("raw_data/level_4.csv"),
+			level_5 = read.csv("raw_data/level_5.csv"),
+			level_6 = read.csv("raw_data/level_6.csv")
 		)
 		# rename the index column to match "sample_metadata"
 		for (i in 1:length(ASVs)) {
