@@ -1,0 +1,134 @@
+---
+title: "Untitled"
+author: "Oscar Price"
+date: "2025-02-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+## Plotting
+plot_mds_with_hulls <- function(mds_obj, factor_vector, title_text) {
+	# set tight margins
+	par(
+		mar = c(2.5, 2.5, 1.5, 1.5),
+		mgp = c(1.5, 0.5, 0)
+	)
+	# Draw blank plot
+	plot(
+		mds_obj$points,
+		xlim = c(-2.5, 1.5),
+		ylim = c(-1.5, 1.7),
+		type = "n",
+		main = title_text
+	)
+	# Add points
+	points(
+		mds_obj,
+		pch = 16,
+		col = as.numeric(factor_vector)
+	)
+	# Calculate convex hull for each factor level
+	for (i in 1:(nlevels(factor_vector))) {
+		group_points <- mds_obj$points[
+			factor_vector == levels(factor_vector)[i],
+			,
+			drop = FALSE
+		]
+		if (nrow(group_points) >= 3) {
+			hull_indices <- chull(
+				group_points
+			)
+			polygon(
+				group_points[hull_indices, ],
+				lty = 2,
+				border = i,
+				col = rgb(
+					col2rgb(i)[1]/255,
+					col2rgb(i)[2]/255,
+					col2rgb(i)[3]/255,
+					alpha = 0.1
+				),
+			)
+		}
+	}
+	legend(
+		"topright",
+		legend = levels(factor_vector), # Group names
+		col = 1:nlevels(factor_vector),
+		pch = 16,
+		title = NULL,
+		bty = "n"                     # No legend box
+	)
+	# restore default margins
+	par(
+		mar = c(5.1, 4.1, 4.1, 2.1),
+		mgp = c(3, 1, 0)
+	)
+}
+
+par(mfrow = c(2,2))
+for (i in keyvals$catchments) {
+	plot_mds_with_hulls(
+		mds_obj = b_div[[i]]$Quartile_Class[[5]]$MDS,
+		factor_vector = b_div[[i]]$Quartile_Class[[5]]$factor_vector,
+		title_text = paste(
+			i,
+			"p =", b_div[[i]]$Quartile_Class[[5]]$ADONIS$`Pr(>F)`[1]
+		)
+	)
+}
+par(mfrow = c(1,1))
+```
+```{r}
+par(
+	mar = c(3.5, 3.5, 1.5, 0.8),
+	mgp = c(2.2, 0.8, 0),
+	mfrow = c(1,2)
+)
+boxplot(
+	master[[5]]$richness ~ master[[5]]$Quartile_Class,
+	ylab = "Species Richness",
+	xlab = "Total Mean Shared Metal Concentration"
+)
+boxplot(
+	master[[5]]$shannon ~ master[[5]]$Quartile_Class,
+	ylab = "Shannon Diversity Index (H)",
+	xlab = "Total Mean Shared Metal Concentration"
+)
+par(
+	mar = c(5.1, 4.1, 4.1, 2.1),
+	mgp = c(3, 1, 0),
+	mfrow = c(1,1)
+)
+```
+
+```{r}
+par(
+	mar = c(3.5, 3.5, 1.5, 0.8),
+	mgp = c(2.2, 0.8, 0),
+	mfrow = c(1,2)
+)
+plot(
+	master[[5]]$richness ~ master[[5]]$Total_Mean.mgL,
+	ylab = "Species Richness",
+	xlab = "TSMC (mg/L)"
+)
+plot(
+	master[[5]]$shannon ~ master[[5]]$Total_Mean.mgL,
+	ylab = "Shannon Diversity Index (H)",
+	xlab = "TSMC (mg/L)",
+#	col = "as.numeric(as.factor(master[[5]]$Month))"",
+#	pch = 16,
+#	cex = 1.1,
+#	lwd = 0.1
+)
+par(
+	mar = c(5.1, 4.1, 4.1, 2.1),
+	mgp = c(3, 1, 0),
+	mfrow = c(1,1)
+)
+```
