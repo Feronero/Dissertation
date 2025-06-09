@@ -143,7 +143,7 @@
 			by = "notation"
 		)
 	}
-	## 11. Calculate median median levels per metal point
+	## 11. Calculate median levels per metal point
 		## normalise for biological impact if able
 	{
 		# Create list to store medians and interquartile ranges

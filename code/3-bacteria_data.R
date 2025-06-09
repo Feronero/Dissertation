@@ -1,4 +1,5 @@
 {
+	{
 	## Metadata for all bacteria samples
 		bact_data <- list()
 		bact_data$all <- read.csv(
@@ -29,6 +30,7 @@
 					"raw_data/qPCR_refined/plate_", i, ".csv"
 				)
 			)[, 1:2]
+		}
 		qPCR_data$all <- do.call(
 			rbind, qPCR_data$all
 		)
@@ -43,19 +45,20 @@
 	
 	## Alpha Diversity
 	{
+		# create alpha_diversity storage list
 		a_div <- list()
 		for (i in 1:keyvals$n_levels) {
 			a_div[[i]] <- data.frame(
 				SampleID = PCR_data[[i]][,"SampleID"]
 			)
 		}
-		# species richness
+		# calculate species richness
 		for (i in 1:keyvals$n_levels) {
 			a_div[[i]][,"richness"] <- specnumber(
 				PCR_data[[i]][, -1]
 			)
 		}
-		# all other a_indices
+		# calculate all other a_indices
 		for (j in keyvals$a_indices[-1]) {
 			for (i in 1:keyvals$n_levels) {
 				a_div[[i]][, j] <- diversity(
