@@ -1,12 +1,21 @@
-# bar chart ----
+## bar chart ----
 {
-	bact_col_names <- 
-	
+	## select bacterial columns
+	bact_cols <- grep(
+		pattern = "^d__",
+		x = names(master$completewvariance[[1]]),
+		value = TRUE
+	)
+	## converts raw sequence counts to relative abundance percentages
 	df_agg <- master$completewvariance[[1]] %>%
+		mutate(across(
+			all_of(bact_cols),
+			~ .x / rowSums(across(all_of(bact_cols)), na.rm = TRUE) * 100
+		)) %>%
 		group_by(Catchment, Month) %>%
-		summarise(across(all_of(colnames)))
-		summarise(across(where(is.numeric), \(x) mean(x, na.rm = TRUE))) %>%
+		summarise(across(all_of(bact_cols), \(x) mean(x, na.rm = TRUE))) %>%
 		ungroup()
+	
 	top_phyla <- df_agg %>%
 		summarise(across(-c(Catchment, Month), mean)) %>%
 		pivot_longer(everything(), names_to = "phylum", values_to = "abundance") %>%
@@ -16,31 +25,85 @@
 	
 	# Combine non-top phyla into "Other"
 	df_agg_top <- df_agg %>%
-		mutate(Other = rowSums(across(!all_of(c("Catchment", "Month", top_phyla))))) %>%
-		dplyr::select(all_of(c("Catchment", "Month", top_phyla, "Other"))) %>%
-		pivot_longer(-c(Catchment, Month), names_to = "phylum", values_to = "abundance")
+		mutate(
+			Other = rowSums(
+				across(
+					!all_of(
+						c("Catchment", "Month", top_phyla)
+					)
+				)
+			)
+		) %>%
+		dplyr::select(
+			all_of(
+				c("Catchment", "Month", top_phyla, "Other")
+			)
+		) %>%
+		pivot_longer(
+			-c(Catchment, Month),
+			names_to = "phylum",
+			values_to = "abundance"
+		)
 	# Order seasons chronologically
 	season_order <- c("January", "April", "July", "October")
-	df_agg_top$Month <- factor(df_agg_top$Month, levels = season_order)
+	df_agg_top$Month <- factor(
+		x = df_agg_top$Month,
+		levels = season_order
+	)
 	
-	# Create the plot
-	ggplot(df_agg_top, aes(x = interaction(Catchment, Month, sep = " - "), y = abundance, fill = phylum)) +
-		geom_col(position = "stack", width = 0.8) +
-		scale_fill_viridis_d(option = "D") + # Use a colorblind-friendly palette
-		scale_x_discrete(
-			breaks = c("River1 - January", "River2 - January", "River3 - January", "River4 - January"),
-			labels = c("River 1", "River 2", "River 3", "River 4")
+	ggplot(
+		df_agg_top, 
+		aes(
+			x = Month,  # Use Month as x-axis (no interaction with Catchment)
+			y = abundance, 
+			fill = phylum
+		)
+	) +
+	geom_col(
+		position = "stack",
+		width = 0.75
 		) +
+		# separate rivers on separate facets
+	facet_wrap(
+		~ Catchment, 
+		scales = "free_x",  # Let x-axis vary per river
+		strip.position = "top",  # Place river labels at top
+		nrow = 1  # Force all rivers into one row
+	) +
+	scale_fill_viridis_d(
+		option = "D",
+		labels = function(x) {
+				# Create expression for each label
+			sapply(
+				x,
+				function(phylum) {
+					if (phylum == "Other") {
+						expression(plain(Other))
+					} else {
+						# Extract just the phylum name (after last '__')
+						phylum_name <- sub("^.*__", "", phylum)
+						bquote(italic(.(phylum_name)))
+					}
+				},
+				simplify = FALSE
+			)
+		}
+	) +
 		labs(
-			x = "River (grouped by season: Jan, Apr, Jul, Oct)",
+			x = "Month",  # Now x-axis shows months (rivers are in facets)
 			y = "Relative Abundance (%)",
 			fill = "Phylum",
 			title = "Top 10 Bacterial Phyla by River and Season"
 		) +
-		theme_minimal() +
+		theme_classic() +
 		theme(
 			axis.text.x = element_text(angle = 45, hjust = 1),
-			panel.spacing = unit(1, "cm"), # Add space between river clusters
-			legend.position = "bottom"
+			panel.spacing = unit(1, "lines"),  # Space between river clusters
+			strip.background = element_blank(),  # Remove facet background
+			strip.text = element_text(size = 10, face = "bold"),  # Style river labels
+			legend.position = "bottom",  # Remove global italic setting here
+			plot.title = element_text(hjust = 0.5),
+			legend.title = element_text(angle = 90, hjust = 0.5),
+			legend.spacing.x = unit(50, "cm")
 		)
 }

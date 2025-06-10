@@ -1,5 +1,6 @@
 # Set up data ----
 {
+	# dataframe of all metal points with complete data
 	metal_points$complete <- metal_points$paired %>%
 		filter(if_all(14:30, ~ !is.na(.x)))
 	na_metals <- norm_tests$medianmetal %>%
@@ -10,6 +11,7 @@
 	varying_metal_cols <- metal_points$complete_wvariance[, names(metal_points$complete_wvariance) %in% keyvals$medians]
 	rm(na_metals)
 }
+
 # Non-Parametric Correlation Test on Metals ----
 {
 	# run corr test
