@@ -1,12 +1,10 @@
-# Raw Metal Values ----
-{
+{ # Raw Metal Values ----
 	# export histograms of raw metal concentrations
-	{
 		for (i in 1:17) {
 			png(
 				filename = paste0(
 					"outputs/plots/rawmetal_hists/rawmetal_hist_",
-					colnames(metal_data$wide[3 + i]),
+					colnames(metal_data[3 + i]),
 					".png"
 				),
 				width = 1080,
@@ -20,7 +18,7 @@
 				yaxs = "i"
 			)
 			hist(
-				metal_data$wide[[3 + i]],
+				metal_data[[3 + i]],
 				main = NULL,
 				xlab = NULL,
 				ylab = NULL,
@@ -36,18 +34,18 @@
 			box(bty = "n", col = "white")  # Final clean bounding box removal
 			dev.off()
 		}
-		# reset margins
+	# reset margins
 		par(
 			mar = c(5.1, 4.1, 4.1, 2.1)
 		)
-	}
-	# Shapiro-Wilk test on all raw metal values
-	{
+}
+
+{ # Shapiro-Wilk test on all raw metal values
 		norm_tests <- list()
 		norm_tests$rawmetal <- list()
 		for (i in 1:17) {
 			x <- metal_data$wide[[3 + i]]
-			# if all concentrations identical
+		# if all concentrations identical
 			if (length(unique(x)) == 1) {
 				norm_tests$rawmetal[[i]] <- data.frame(
 					Metal = colnames(metal_data$wide)[3 + i],
@@ -56,7 +54,7 @@
 					n = sum(!is.na(x)),
 					Note = "Constant values"
 				)
-				# if concentrations show variance
+		# if concentrations show variance
 			} else {
 				test <- shapiro.test(x)
 				norm_tests$rawmetal[[i]] <- data.frame(
@@ -70,16 +68,15 @@
 		}
 		rm(test)
 		norm_tests$rawmetal <- do.call(rbind, norm_tests$rawmetal)
-		# export table
+	# export table
 		write_xlsx(
 			x = norm_tests$rawmetal,
 			path = "outputs/tables/distest_rawmetal.xlsx"
 		)
-	}
 }
 
-# Median Metal Values ----
-{
+{ # Median Metal Values ----
+
 	metal_points$complete <- metal_points$paired %>%
 		filter(if_all(14:30, ~ !is.na(.x)))
 	
@@ -161,11 +158,11 @@
 }
 # richness ----
 {
-	print(shapiro.test(a_div[[5]]$richness))
-	hist(a_div[[5]]$richness)
+	print(shapiro.test(a_div[[4]]$richness))
+	hist(a_div[[4]]$richness)
 }
 # shannon ----
 {
-	print(shapiro.test(a_div[[5]]$shannon))
-	hist(a_div[[5]]$shannon)
+	print(shapiro.test(a_div[[4]]$shannon))
+	hist(a_div[[4]]$shannon)
 }

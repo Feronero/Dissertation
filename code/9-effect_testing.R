@@ -16,7 +16,6 @@
 			by           = "margin",  # Assess marginal effects (Type III SS)
 			method       = "bray"
 		)
-		rm(unbalanced_community)
 	}
 	## plot
 	{

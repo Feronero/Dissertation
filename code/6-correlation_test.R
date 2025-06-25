@@ -1,7 +1,7 @@
 # Set up data ----
 {
 	# dataframe of all metal points with complete data
-	metal_points$complete <- metal_points$paired %>%
+	metal_points <- metal_points %>%
 		filter(if_all(14:30, ~ !is.na(.x)))
 	na_metals <- norm_tests$medianmetal %>%
 		filter(is.na(W)) %>%

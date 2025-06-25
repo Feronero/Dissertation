@@ -50,3 +50,6 @@ rsconnect/
 
 # Raw Data Folder
 raw_data/
+
+# Outputs Folder
+outputs/

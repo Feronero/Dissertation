@@ -1,12 +1,11 @@
 {
 	{
-		master <- list()
 		# master list of all paired EA points, bacteria points, and metal data
-		master$paired <- list()
+		master_paired <- list()
 		# bact_points:metal
 		for (i in 1:keyvals$n_levels) {
-			master$paired[[i]] <- merge(
-				x    = bact_data$all[ , c(1,2,3,4,6,14,15,16,17,18)],
+			master_paired[[i]] <- merge(
+				x    = bact_data[ , c(1,2,3,4,5,6,15,16,17,18)],
 				y    = metal_points$paired[ , c(4,10,14:ncol(metal_points$paired))],
 				by.x = "Site",
 				by.y = "eDNA_point"
@@ -33,7 +32,7 @@
 	}
 	# only EA points with records of all metals ("complete records")
 	{
-		master$completemetals <- list()
+		master_completemetals <- list()
 		# bact_points:metal
 		for (i in 1:keyvals$n_levels) {
 			master$completemetals[[i]] <- merge(
@@ -112,10 +111,10 @@
 				filter(
 					if_all(ends_with("median.μgL"), ~ !is.na(.x))
 				) %>%
-				filter(!Month %in% c("October")) %>%
+#				filter(!Month %in% c("October")) %>%
 				# 1. Identify sites with data for all required months
 				group_by(Catchment, Site) %>%
-				filter(all(c("January", "April", "July") %in% Month)) %>%
+				filter(all(c("January", "April", "July", "October") %in% Month)) %>%
 				ungroup()
 			
 			# 2. Randomly select 3 sites per river (from those with required monthly coverage)
@@ -123,7 +122,7 @@
 			selected_sites <- master$balanced[[i]] %>%
 				group_by(Catchment) %>%
 				distinct(Site) %>%
-				slice_sample(n = 3) %>%   # no. sites per catcment
+				slice_sample(n = 3) %>%   # no. sites per catchment
 				ungroup()
 			
 			# 3. Retain 1 entry per month for selected sites

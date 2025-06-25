@@ -1,18 +1,33 @@
-{
-	{
-	## Metadata for all bacteria samples
-		bact_data <- list()
-		bact_data$all <- read.csv(
+{ # Import Raw Bacteria Data ----
+
+	# Import metadata for all bacteria samples
+		bact_meta <- list()
+		bact_meta <- read.csv(
 			"raw_data/sample_metadata_blanks_removed.csv"
 		)
-		names(bact_data$all)[15] <- "DTM.km"
-	## Metadata for all bacteria points
-		bact_points <- list()
-		bact_points$all <- bact_data$all[
-			!duplicated(bact_data$all$Site),
-			c(3, 4, 5, 12, 13, 14, 15, 16, 20)
-		]
-	## PCR Data
+		names(bact_meta)[15] <- "DTM.km"
+		bact_meta$Year <- as.numeric(format(as.Date(bact_meta$Date, format = "%d/%m/%Y"), "%Y"))
+		bact_meta$Month <- format(as.Date(bact_meta$Date, format = "%d/%m/%Y"), "%m")
+		bact_meta <- bact_meta %>%
+			select(
+				-Grid_ref,
+				-X,
+				-Y,
+				-Latitude,
+				-Longitude,
+				-Time,
+				-Altitude,
+				-EC,
+				-Site_code,
+				-Site_code_2,
+				-Site_time_code,
+				-Poll_class
+			) %>%
+			relocate(
+				Year,
+				.after = "Location"
+			)
+	# Import PCR Data
 		PCR_data <- list()
 		for (i in 1:keyvals$n_levels) {
 			PCR_data[[i]] <- read.csv(
@@ -22,43 +37,46 @@
 			)
 			colnames(PCR_data[[i]])[1] <- "SampleID"
 		}
-	## qPCR Data
+	# Import qPCR Data
 		qPCR_data <- list()
 		for (i in 1:7) {
-			qPCR_data$all[[i]] <- read.csv(
+			qPCR_data[[i]] <- read.csv(
 				paste0(
 					"raw_data/qPCR_refined/plate_", i, ".csv"
 				)
 			)[, 1:2]
 		}
-		qPCR_data$all <- do.call(
-			rbind, qPCR_data$all
+		qPCR_data <- do.call(
+			rbind, qPCR_data
 		)
-		# distill out the mean of each sample pair
-			qPCR_data$meaned <- qPCR_data$all %>%
-				group_by(Sample) %>%
-				summarise(
-					Mean_Cq = mean(Cq, na.rm = TRUE),
-					SD_Cq = sd(Cq, na.rm = TRUE)
-				)
-	}
-	
-	## Alpha Diversity
-	{
-		# create alpha_diversity storage list
+}
+
+{ # Calculate Mean qPCR Cq Values (from the two technical replicates each) ----
+
+	qPCR_data <- qPCR_data %>%
+		group_by(Sample) %>%
+		summarise(
+			Mean_Cq = mean(Cq, na.rm = TRUE),
+			SD_Cq = sd(Cq, na.rm = TRUE)
+		)
+}
+
+{ # Calculate Alpha Diversity ----
+
+	# create alpha_diversity storage list
 		a_div <- list()
 		for (i in 1:keyvals$n_levels) {
 			a_div[[i]] <- data.frame(
 				SampleID = PCR_data[[i]][,"SampleID"]
 			)
 		}
-		# calculate species richness
+	# calculate species richness
 		for (i in 1:keyvals$n_levels) {
 			a_div[[i]][,"richness"] <- specnumber(
 				PCR_data[[i]][, -1]
 			)
 		}
-		# calculate all other a_indices
+	# calculate all other a_indices
 		for (j in keyvals$a_indices[-1]) {
 			for (i in 1:keyvals$n_levels) {
 				a_div[[i]][, j] <- diversity(
@@ -67,5 +85,67 @@
 				)
 			}
 		}
-	}
+}
+
+{ # Merge all data from each bacteria sample into single dataframe ----
+	
+	# create list
+		bact_data <- list()
+	# merge bact_meta and qPCR data for each tax. level
+		for (i in 1:keyvals$n_levels) {
+			bact_data[[i]] <- merge(
+				x = bact_meta,
+				y = qPCR_data,
+				by = "Sample",
+				all.x = TRUE
+			)
+		}
+	# add alpha_div data
+		for (i in 1:keyvals$n_levels) {
+			bact_data[[i]] <- merge(
+				x = bact_data[[i]],
+				y = a_div[[i]],
+				by = "SampleID"
+			)
+		}
+	# add PCR data
+		for (i in 1:keyvals$n_levels) {
+			bact_data[[i]] <- merge(
+				x = bact_data[[i]],
+				y = PCR_data[[i]],
+				by = "SampleID"
+			)
+		}
+	# add "season" factor column
+		for (i in 1:keyvals$n_levels) {
+			bact_data[[i]] <- bact_data[[i]] %>%
+				mutate(
+					Season = case_when(
+						Month %in% "04" ~ "Spring",
+						Month %in% "07" ~ "Summer",
+						Month %in% "10" ~ "Autumn",
+						Month %in% "01" ~ "Winter"
+					),
+					Season = factor(
+						Season,
+						levels = c(
+							"Spring", "Summer", "Autumn", "Winter"
+						)
+					)
+				) %>%
+				relocate(
+					Season,
+					.after = 5
+				)
+		}
+	# export the level 4 bact_data as a .csv
+		write_csv(
+			x = bact_data[[1]],
+			file = "outputs/tables/bact_data.csv"
+		)
+	# remove individual dataframes
+		rm(
+			a_div, bact_meta, PCR_data, qPCR_data
+		)
+	
 }

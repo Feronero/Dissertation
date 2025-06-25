@@ -98,12 +98,14 @@
 		theme_classic() +
 		theme(
 			axis.text.x = element_text(angle = 45, hjust = 1),
+#			axis.title.x = element_text(margin = margin(t = 10)),
 			panel.spacing = unit(1, "lines"),  # Space between river clusters
 			strip.background = element_blank(),  # Remove facet background
 			strip.text = element_text(size = 10, face = "bold"),  # Style river labels
-			legend.position = "bottom",  # Remove global italic setting here
+			legend.position = "bottom",
 			plot.title = element_text(hjust = 0.5),
 			legend.title = element_text(angle = 90, hjust = 0.5),
-			legend.spacing.x = unit(50, "cm")
+			legend.spacing.x = unit(50, "cm"),
+			legend.box.margin = margin(0,0,0,0)
 		)
 }
