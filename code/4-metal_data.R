@@ -100,13 +100,11 @@
 					point_year_month,
 					measure_unit
 				)
-	
-#	# Create list of each metal and its measure unit for reference
-#		metal_data_ref <- data.frame(
-#			metals_and_units = unique(
-#				metal_data$measure_unit
-#			)
-#		)
+	# export
+		write_csv(
+			metal_data,
+			"outputs/tables/metal_data_long.csv"
+		)
 	# transpose to wide format
 		metal_data <- reshape(
 			data = metal_data,
@@ -185,11 +183,6 @@
 				Season,
 				.after = 4
 			)
-	# # remove "month" column
-	# 	metal_wide <- metal_wide %>%
-	# 		select(
-	# 			-month
-	# 		)
 	# Export wide-format metal data as csv file
 		write_csv(
 			x = metal_wide,
@@ -394,7 +387,7 @@
 	# Cumulative variance explained by the PCs
 	summary(pca_res)$importance[2:3,1:5]
 	# Choose how many PCs to keep
-	keep <- 4
+	keep <- 3
 	# Pull PC scores for those axes
 	scores <- as.data.frame(pca_res$x[, 1:keep]) %>% 
 		setNames(paste0("PC", 1:keep))
@@ -409,13 +402,13 @@
 	naive_loadings <- pca_res$rotation[, 1:keep]  # weights of each metal
 	print(round(naive_loadings, 2))               # keep two decimals
 	# test for overdispersion
-	d <- dist(meta_pc %>% select(PC1:PC4))
+	d <- dist(meta_pc %>% select(PC1:paste0("PC", keep)))
 	bd <- betadisper(d, group = meta_pc$Catchment)
 	permutest(bd, permutations = 999)
 	# 8. Type I PERMANOVA
 	perm <- adonis2(
 		meta_pc[, paste0("PC", 1:keep)] ~
-			Catchment + Site %in% Catchment + year + Season,
+			Catchment + Site %in% Catchment + year %in% Catchment + Season,
 		data = meta_pc,
 		permutations = 999,
 		by = "terms",
@@ -467,7 +460,7 @@
 		
 		# 3. PERMANOVA with the full formula
 		mod <- adonis2(
-			dist_mat ~ Catchment + Site %in% Catchment + year + Season,
+			dist_mat ~ Catchment + Site %in% Catchment + year %in% Catchment + Season,
 			data = samp,
 			by = "terms",
 			permutations = 999
@@ -557,6 +550,8 @@
 }
 
 { # post-hoc to detect exactly HOW metal scores vary with each factor ----
+	pcs <- names(meta_pc) %>% keep(~ grepl("^PC\\d+$", .x))
+	
 	# ── fixed helper
 	kw_boxplot <- function(data, pc, factor){
 		
@@ -591,26 +586,27 @@
 		pal <- scales::hue_pal()(n_distinct(plot_df$letter))
 		names(pal) <- sort(unique(plot_df$letter))
 		
-		p <- ggplot(plot_df, aes_string(x = factor, y = pc, fill = "letter")) +
-			geom_boxplot(show.legend = FALSE, outlier.shape = NA) +
-			geom_jitter(width = 0.15, alpha = 0.3, size = 1) +
-			scale_fill_manual(values = pal) +
+		pal_fill   <- scales::alpha(pal, 0.10)   # 40 % opaque
+		names(pal_fill) <- names(pal)            # keep the same letter names
+		
+		p <- ggplot(plot_df, aes_string(x = factor, y = pc, fill = "letter", colour = "letter")) +
+			geom_boxplot(alpha = 0.1, show.legend = FALSE, outlier.shape = NA, size = 0.6) +   # outlines coloured, fill semi-transparent
+			geom_jitter(width = 0.15, alpha = 0.7, size = 1, shape = 1) +
+#			scale_x_discrete(limits = levels(meta_pc[[factor]])) +
+			scale_fill_manual(values = pal_fill) +
+			scale_colour_manual(values = pal) +              # fully opaque for borders & text
 			geom_text(
 				data = grp_df,
 				aes_string(x = factor,
-							  y = max(plot_df[[pc]], na.rm = TRUE) * 1.3,  # Increased from 1.05
+							  y = max(plot_df[[pc]], na.rm = TRUE) * 1.3,
 							  label = "letter",
 							  colour = "letter"),
 				show.legend = FALSE
 			) +
-			scale_colour_manual(values = pal) +
-#			labs(title = paste(pc, "by", factor),
-#				  subtitle = "Levels sharing a colour/letter are not significantly different\n(Kruskal-Wallis + Bonferroni-adjusted Dunn)") +
 			theme_classic() +
 			theme(
 				plot.subtitle = element_text(size = 9),
-				legend.position = "none",
-				aspect.ratio = 0.95
+				legend.position = "none"
 			)
 		
 		print(p)
@@ -618,21 +614,18 @@
 		ggsave(
 			filename = paste0("outputs/plots/final/", pc, "_by_", factor, ".png"),  # Dynamic filename
 			plot = p,
-			width = 6,
+			width = 3,
 			height = 5,
 			units = "in",
-			dpi = 300
+			dpi = 1000
 		)
 	}
-	
-	# ── example calls
-	
-	# one factor across one PC axis
-	print(kw_boxplot(meta_pc, pc = "PC1", factor = "Catchment"))
+}
+
+{ # post-hoc graphs for all PCs and factors ----
 	
 	# Each standalone factor across all PC axes
 	walk(pcs, ~ print(kw_boxplot(meta_pc, pc = .x, factor = "Catchment")))
-	walk(pcs, ~ print(kw_boxplot(meta_pc, pc = .x, factor = "year")))
 	walk(pcs, ~ print(kw_boxplot(meta_pc, pc = .x, factor = "Season")))
 	
 	# sites within a specific catchment
@@ -664,9 +657,39 @@
 			factor = "Site")
 		print(p)
 	})
+	
+	# years within a specific catchment
+	walk(pcs, function(pc){
+		p <- kw_boxplot(
+			data   = meta_pc %>% filter(Catchment == "Carnon"),
+			pc     = pc,
+			factor = "year")
+		print(p)
+	})
+	walk(pcs, function(pc){
+		p <- kw_boxplot(
+			data   = meta_pc %>% filter(Catchment == "Cober"),
+			pc     = pc,
+			factor = "year")
+		print(p)
+	})
+	walk(pcs, function(pc){
+		p <- kw_boxplot(
+			data   = meta_pc %>% filter(Catchment == "Hayle"),
+			pc     = pc,
+			factor = "year")
+		print(p)
+	})
+	walk(pcs, function(pc){
+		p <- kw_boxplot(
+			data   = meta_pc %>% filter(Catchment == "Red"),
+			pc     = pc,
+			factor = "year")
+		print(p)
+	})
 }
 
-{ # Catchment-level metal plot ----
+{ # Catchment-level nMDS plot ----
 	## pick easily recognisable symbols
 	shape_vals <- c(
 		"Carnon" = 16,
@@ -677,7 +700,9 @@
 	
 	# ----- 2. build the distance matrix on the four PCs
 	# PCs are already scaled, so Euclidean distance is fine
-	dist_mat <- dist(meta_pc %>% select(PC1:PC4), method = "euclidean")
+	dist_mat <- dist(
+		meta_pc %>% select(PC1:paste0("PC", keep)),
+		method = "euclidean")
 	
 	# ----- 3. run non-metric MDS (two dimensions)
 	set.seed(123)                               # gives reproducible solution
@@ -698,10 +723,19 @@
 		scale_shape_manual(values = shape_vals) +
 		theme_classic() +
 		labs(title = NULL,
-			  x = "nMDS axis 1", y = "nMDS axis 2")
-	p + ggforce::geom_mark_hull(aes(fill = Catchment),
+			  x = "nMDS Axis 1", y = "nMDS Axis 2")
+	p <- p + ggforce::geom_mark_hull(aes(fill = Catchment),
 										 concavity = 5, linetype = 0,
 										 alpha = 0.08)
+	ggsave(
+		filename = paste0("outputs/plots/final/Catchments.png"),  # Dynamic filename
+		plot = p,
+		width = 9,
+		height = 5,
+		units = "in",
+		dpi = 1000
+	)
+	p
 }
 
 

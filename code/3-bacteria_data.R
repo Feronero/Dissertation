@@ -149,3 +149,8 @@
 		)
 	
 }
+
+{ # Check subsampling depth
+	f = 1
+	rowSums(bact_data[[f]][1:nrow(bact_data[[f]]), 21:ncol(bact_data[[f]])])
+}
