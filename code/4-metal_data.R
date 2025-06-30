@@ -440,6 +440,11 @@
 		naive_loadings_df,
 		"outputs/tables/naive_loadings_df.csv"
 	)
+	# convert to long format for comparison against iterative balanced PCA in the next step
+	naive_long <- naive_loadings_df %>%
+		pivot_longer(cols = -Metal,
+						 names_to = "PC",
+						 values_to = "orig_loading")
 }
 
 { # balanced PERMANOVA sub-sample loop - removes over-dispersion issues ----
