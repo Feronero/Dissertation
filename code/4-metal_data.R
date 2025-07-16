@@ -159,9 +159,10 @@
 		)
 	# convert "eDNA_point" to "Site" to match bact_data
 		metal_wide <- metal_wide %>% rename(Site = eDNA_point)
-	# remove now-unneeded metal_data
+	# remove intermediate dataframes
 		rm(
-			metal_data
+			metal_data,
+			metal_points
 		)
 	# add "season" factor column
 		metal_wide <- metal_wide %>% 
@@ -369,189 +370,122 @@
 
 { # Run naive PCA and PERMANOVA on metal data (significant over-dispersion) ----
 	# factorise the data
-	meta <- metal_wide %>% 
-		mutate(
-			Catchment = factor(Catchment),
-			Site      = factor(Site),
-			Season    = factor(Season,
-									 levels = c("Spring","Summer","Autumn","Winter"))
-		)
+		meta <- metal_wide %>% 
+			mutate(
+				Catchment = factor(Catchment),
+				Site      = factor(Site),
+				Season    = factor(Season,
+										 levels = c("Spring","Summer","Autumn","Winter"))
+			)
 	# Isolate the metal columns
-	metal_cols <- c("Cadmium","Iron","Nickel",
-						 "Copper","Manganese","Zinc","Magnesium")
-	metals <- meta %>% select(all_of(metal_cols))
+		metal_cols <- c("Cadmium","Iron","Nickel",
+							 "Copper","Manganese","Zinc","Magnesium")
+		metals <- meta %>% select(all_of(metal_cols))
 	# Standardise metals to remove unit size effects
-	metals_z <- scale(metals)               # subtract mean, divide by sd
-	# Principal Component Analysis (PCA)
-	pca_res <- prcomp(metals_z, center = FALSE, scale. = FALSE)
+		metals_z <- scale(metals)               # subtract mean, divide by sd
+	# Run Naive PCA on metals
+		pca_res <- prcomp(metals_z, center = FALSE, scale. = FALSE)
 	# Cumulative variance explained by the PCs
-	summary(pca_res)$importance[2:3,1:5]
+		summary(pca_res)$importance[2:3,1:5]
 	# Choose how many PCs to keep
-	keep <- 3
+		keep <- 3
 	# Pull PC scores for those axes
-	scores <- as.data.frame(pca_res$x[, 1:keep]) %>% 
-		setNames(paste0("PC", 1:keep))
+		scores <- as.data.frame(pca_res$x[, 1:keep]) %>% 
+			setNames(paste0("PC", 1:keep))
 	# Add scores to the metadata table
-	meta_pc <- bind_cols(meta, scores)
+		meta_pc <- bind_cols(meta, scores)
 	# Aggregate > 1 measurement per Catchment/Site/Year/Season
-	meta_pc <- meta_pc %>% 
-		group_by(Catchment, Site, year, Season) %>%
-		summarise(across(starts_with("PC"), median),
-					 .groups = "drop")
+		meta_pc <- meta_pc %>% 
+			group_by(Catchment, Site, year, Season) %>%
+			summarise(across(starts_with("PC"), median),
+						 .groups = "drop")
 	# Check loading values of each PC
-	naive_loadings <- pca_res$rotation[, 1:keep]  # weights of each metal
-	print(round(naive_loadings, 2))               # keep two decimals
-	# test for overdispersion
-	d <- dist(meta_pc %>% select(PC1:paste0("PC", keep)))
-	bd <- betadisper(d, group = meta_pc$Catchment)
-	permutest(bd, permutations = 999)
-	# 8. Type I PERMANOVA
-	perm <- adonis2(
-		meta_pc[, paste0("PC", 1:keep)] ~
-			Catchment + Site %in% Catchment + year %in% Catchment + Season,
-		data = meta_pc,
-		permutations = 999,
-		by = "terms",
-		method = "euclidean",
-	)
-	print(perm)
-	# # Shows samples on the two PC axes, coloured by Catchment
-	# fviz_pca_ind(pca_res,
-	# 				 geom.ind  = "point",
-	# 				 pointshape = 21,
-	# 				 pointsize  = 2,
-	# 				 col.ind   = meta_pc$Catchment) +
-	# 	theme_classic()
-	# export data
-	write_csv(
-		meta_pc,
-		"outputs/tables/meta_pc.csv"
-	)
-	write_csv(
-		meta,
-		"outputs/tables/meta.csv"
-	)
+		naive_loadings <- pca_res$rotation[, 1:keep]  # weights of each metal
+		print(round(naive_loadings, 2))               # keep two decimals
+	# Naive PERMANOVA - whether the metal mixes cluster between factor levels
+		perm <- adonis2(
+			meta_pc[, paste0("PC", 1:keep)] ~
+				Catchment + Site %in% Catchment + year %in% Catchment + Season,
+			data = meta_pc,
+			permutations = 999,
+			by = "terms",
+			method = "euclidean",
+		)
+		print(perm)
+	# export
+		write_csv(
+			meta_pc,
+			"outputs/tables/meta_pc.csv"
+		)
+		write_csv(
+			meta,
+			"outputs/tables/meta.csv"
+		)
 	# Convert matrix to dataframe with row names as a column
-	naive_loadings_df <- as.data.frame(naive_loadings) %>% 
-		rownames_to_column(var = "Metal")  # Convert row names to a column
-	
+		naive_loadings_df <- as.data.frame(naive_loadings) %>% 
+			rownames_to_column(var = "Metal")  # Convert row names to a column
 	# Write to CSV
-	write_csv(
-		naive_loadings_df,
-		"outputs/tables/naive_loadings_df.csv"
-	)
+		write_csv(
+			naive_loadings_df,
+			"outputs/tables/naive_loadings_df.csv"
+		)
 	# convert to long format for comparison against iterative balanced PCA in the next step
-	naive_long <- naive_loadings_df %>%
-		pivot_longer(cols = -Metal,
-						 names_to = "PC",
-						 values_to = "orig_loading")
+		naive_long <- naive_loadings_df %>%
+			pivot_longer(
+				cols = -Metal,
+				names_to = "PC",
+				values_to = "orig_loading"
+			)
 }
 
-{ # balanced PERMANOVA sub-sample loop - removes over-dispersion issues ----
-	## the smallest river has min_n rows
-	min_n <- meta_pc %>% count(Catchment) %>% pull(n) %>% min()
-	
-	## function that does one balanced draw + PERMANOVA
-	one_run <- function(n_sub = min_n) {
-		
-		# 1. draw n_sub rows from every Catchment
-		samp <- meta_pc %>%
-			group_by(Catchment) %>%
-			slice_sample(n = n_sub) %>%
-			ungroup()
-		
-		# 2. build Euclidean distance on the four PCs
-		dist_mat <- dist(samp %>% select(PC1:PC4))
-		
-		# 3. PERMANOVA with the full formula
-		mod <- adonis2(
-			dist_mat ~ Catchment + Site %in% Catchment + year %in% Catchment + Season,
-			data = samp,
-			by = "terms",
+{ # Are the new PCs significantly correlated? ----
+	cor.test(meta_pc$PC1, meta_pc$PC2, method = "spearman")
+	cor.test(meta_pc$PC1, meta_pc$PC3, method = "spearman")
+	cor.test(meta_pc$PC2, meta_pc$PC3, method = "spearman")
+}
+
+{ # test naive PC values for over-dispersion across each factor ----
+	metal_dist <- dist(meta_pc %>% select(PC1:paste0("PC", keep)))
+	# over-dispersion by catchment
+		permutest(
+			betadisper(
+				metal_dist,
+				group = meta_pc$Catchment
+			),
 			permutations = 999
 		)
-		
-		# 4. keep just the rows you care about
-		tibble(term = rownames(mod)[1:4],
-				 R2   = mod$R2[1:4],
-				 p    = mod$`Pr(>F)`[1:4])
-	}
-	
-	## 999 balanced runs
-	set.seed(42)
-	out <- map_dfr(1:999, ~one_run())
-	
-	## summarise
-	PERM_loop_summary <- out %>%
-		group_by(term) %>%
-		summarise(median_R2 = median(R2),
-					 lo_R2     = quantile(R2, 0.025),
-					 hi_R2     = quantile(R2, 0.975),
-					 pct_p_lt_0.05 = mean(p < 0.05) * 100,
-					 .groups = "drop")
-	
-	print(PERM_loop_summary)
-}
-
-{ # Balanced PCA sub-sample loop - checks whether naive PCA loadings are correct ----
-	# reference rotation – enforce metal_cols order
-	ref_rot <- naive_loadings_df %>%
-		arrange(match(Metal, metal_cols)) %>%   # <<< new line
-		column_to_rownames("Metal") %>%
-		as.matrix()
-	
-	# helper unchanged
-	align_signs <- function(new_rot, ref_rot) {
-		ref      <- ref_rot[rownames(new_rot), , drop = FALSE]
-		cor_sign <- sign(diag(cor(new_rot, ref)))
-		sweep(new_rot, 2, cor_sign, `*`)
-	}
-	
-	# one balanced bootstrap draw
-	one_draw <- function(seed) {
-		set.seed(seed)
-		
-		samp <- meta |>
-			group_by(Catchment) |>
-			slice_sample(n = min_n) |>
-			ungroup()
-		
-		pca <- prcomp(samp[, metal_cols], center = TRUE, scale. = TRUE)
-		
-		rot_ok <- align_signs(pca$rotation[, 1:4], ref_rot)
-		
-		as_tibble(rot_ok, rownames = "Metal") |>
-			pivot_longer(-Metal, names_to = "PC", values_to = "loading") |>
-			mutate(iter = seed)
-	}
-	
-	# 999 balanced PCAs
-	set.seed(42)
-	boot_load <- map_dfr(1:999, one_draw)
-	
-	balanced_load_summary <- boot_load %>%
-		group_by(Metal, PC) %>%
-		summarise(median_loading = median(loading),
-					 lo_99 = quantile(loading, .005),
-					 hi_99 = quantile(loading, .995),
-					 .groups = "drop")
-	
-	# *** no second sign_fix block ***
-	compare <- balanced_load_summary %>%
-		left_join(naive_long, by = c("Metal","PC")) %>%
-		mutate(within_99 = orig_loading >= pmin(lo_99, hi_99) &
-				 	orig_loading <= pmax(lo_99, hi_99),
-				 abs_diff = abs(orig_loading - median_loading))
-	
-	agreement <- compare %>%
-		group_by(PC) %>%
-		summarise(correlation = cor(median_loading, orig_loading),
-					 rmse        = sqrt(mean((orig_loading - median_loading)^2)),
-					 pct_within  = mean(within_99) * 100,
-					 .groups = "drop")
-	
-	write_csv(compare, "outputs/tables/loading_comparison_detail.csv")
-	write_csv(agreement,  "outputs/tables/agreement.csv")
+	# over-dispersion by site in catchment
+		permutest(
+			betadisper(
+				metal_dist,
+				group = meta_pc$Site
+			),
+			permutations = how(
+				nperm = 999,
+				within = Within(type = "free"),
+				plots = Plots(strata = meta_pc$Catchment)
+			)
+		)
+	# over-dispersion by year in catchment
+		permutest(
+			betadisper(
+				metal_dist,
+				group = meta_pc$year
+			),
+			permutations = how(
+				nperm = 999,
+				within = Within(type = "free"),
+				plots = Plots(strata = meta_pc$Catchment)
+			)
+		)
+	# over-dispersion by season
+		permutest(
+			betadisper(
+				metal_dist,
+				group = meta_pc$Season
+			),
+			permutations = 999
+		)
 }
 
 { # post-hoc to detect exactly HOW metal scores vary with each factor ----
@@ -743,4 +677,17 @@
 	p
 }
 
-
+{ # Aggregate PC values by season, collapse different years together ----
+	meta_pc_agg <- meta_pc %>%
+		group_by(
+			Site,
+			Season
+		) %>%
+		summarise(
+			across(
+				starts_with("PC"),
+				\(x) median(x, na.rm = TRUE)
+			),
+			.groups = "drop"
+		)
+}

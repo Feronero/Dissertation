@@ -3,11 +3,11 @@
 	## select bacterial columns
 	bact_cols <- grep(
 		pattern = "^d__",
-		x = names(master$completewvariance[[1]]),
+		x = names(master[[1]]),
 		value = TRUE
 	)
 	## converts raw sequence counts to relative abundance percentages
-	df_agg <- master$completewvariance[[1]] %>%
+	df_agg <- master[[1]] %>%
 		mutate(across(
 			all_of(bact_cols),
 			~ .x / rowSums(across(all_of(bact_cols)), na.rm = TRUE) * 100
