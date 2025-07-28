@@ -168,33 +168,26 @@
 		}
 }
 
-{ # collapse the data to one level per site/season ----
-	bact_collapsed <- list()
+{ # remove un-necessary columns ----
 	for (i in 1:keyvals$n_levels) {
-		bact_collapsed[[i]] <- as.data.frame(bact_data[[i]] %>%
-			group_by(Batch) %>%
-			summarise(
-				Catchment = first(Catchment),
-				Site = first(Site),
-				Season = first(Season),
-				Altitude = first(Altitude),
-				DTM.km = first(DTM.km),
-				Veg_Surround = first(Veg_Surround),
-				Temp = first(Temp),
-				pH = first(pH),
-				Cq_Median = median(Cq_Median, na.rm = TRUE),
-				Cq_IQR = median(Cq_IQR, na.rm = TRUE),
-				richness = median(richness, na.rm = TRUE),
-				shannon = median(shannon, na.rm = TRUE),
-				simpson = median(simpson, na.rm = TRUE),
-				invsimpson = median(invsimpson, na.rm = TRUE),
-				across(
-					names(bact_data[[i]] %>% select_after("invsimpson")),
-					\(x) median(x, na.rm = TRUE)
-				)
-			) %>%
-			ungroup()
-		)
+		bact_data[[i]] <- bact_data[[i]] %>%
+			select(
+				Batch,
+				Catchment,
+				Site,
+				Season,
+				Altitude,
+				DTM.km,
+				Veg_Surround,
+				Temp,
+				pH,
+				Cq_Median,
+				Cq_IQR,
+				richness,
+				shannon,
+				simpson,
+				invsimpson:last_col()
+			)
 	}
 }
 
@@ -206,7 +199,7 @@
 		  filter(x < y) %>%
 		  mutate(
 		    test = map2(x, y, ~ cor.test(
-		    	bact_collapsed[[1]][[.x]], bact_collapsed[[1]][[.y]],
+		    	bact_data[[1]][[.x]], bact_data[[1]][[.y]],
 		    	method = "spearman", exact = FALSE
 		    )),
 		    rho = map_dbl(test, "estimate"),
@@ -237,16 +230,18 @@
 { # Merge DTM and Altitude into single shared PC axis ----
 	# PCA combining DTM.km and Altitude
 		pca_result <- prcomp(
-			bact_collapsed[[1]] %>%
+			bact_data[[1]] %>%
 				select(DTM.km, Altitude),
 			scale. = TRUE,
 			center = TRUE
 		)
-		summary(pca_result)$importance
-		pca_result$rotation
+		summary(pca_result)$importance %>%
+			print()
+		pca_result$rotation %>%
+			print()
 	# Replace DTM.km and Altitude with PC1 ("River_Gradient")
 		for (i in 1:keyvals$n_levels) {
-			bact_collapsed[[i]] <- bact_collapsed[[i]] %>%
+			bact_data[[i]] <- bact_data[[i]] %>%
 				mutate(River_Gradient = -pca_result$x[, 1]) %>%
 				select(-DTM.km, -Altitude) %>%
 				relocate(River_Gradient, .after = "Season")
@@ -261,7 +256,7 @@
 		  filter(x < y) %>%
 		  mutate(
 		    test = map2(x, y, ~ cor.test(
-		    	bact_collapsed[[1]][[.x]], bact_collapsed[[1]][[.y]],
+		    	bact_data[[1]][[.x]], bact_data[[1]][[.y]],
 		    	method = "spearman", exact = FALSE
 		    )),
 		    rho = map_dbl(test, "estimate"),
@@ -289,308 +284,59 @@
 		     p_adjusted = p_adj_mat)
 }
 
-{ # Test VIF (multivariate co-linearity) (Temp moderately infalted VIF, maybe drop) ----
-	vif_out <- vif(lm(
+{ # Test VIF (multivariate co-linearity) (Temp moderately inflated VIF, maybe drop) ----
+	lm(
 		River_Gradient ~ 
 			Catchment + Season + Veg_Surround + pH + Temp,
-		data = bact_collapsed[[1]]
-	))
-	print(vif_out)
+		data = bact_data[[1]]
+	) %>%
+	check_collinearity()
 }
 
-{ # Compare PERMANOVA performance with + without Temp ----
-	# Fit both PERMANOVA models
-		mod_with <- adonis2(
-			bact_collapsed[[4]] %>% select_after("invsimpson") ~
-				Catchment + Season + River_Gradient + Veg_Surround + pH + Temp,
-			data = bact_collapsed[[4]],
-			method = "bray",
-			by = "margin",
-			strata = bact_collapsed[[4]]$Site
-		)
-		mod_no <- adonis2(
-			bact_collapsed[[4]] %>% select_after("invsimpson") ~
-				Catchment + Season + River_Gradient + Veg_Surround + pH,
-			data = bact_collapsed[[4]],
-			method = "bray",
-			by = "margin",
-			strata = bact_collapsed[[4]]$Site
-		)
-	# Compute AICc for each model
-		aicc_with <- AICc_permanova2(mod_with)$AICc
-		aicc_no   <- AICc_permanova2(mod_no)$AICc
-	# Extract total R2 and adjusted R2
-		getR2 <- function(mod) {
-		  ss      <- mod$SumOfSqs
-		  totalSS <- sum(ss)
-		  R2_tot  <- (sum(ss[-length(ss)]) / totalSS)
-		  n <- sum(mod$Df)
-		  p <- length(ss) - 1
-		  R2_adj <- 1 - (1 - R2_tot) * ((n - 1) / (n - p - 1))
-		  return(c(R2 = R2_tot, Adj_R2 = R2_adj))
+{ # Test dependent variables for co-linearity ----
+	test <- list()
+		for (i in 1:keyvals$n_levels) {
+			bact_data[[i]] %>%
+				select(invsimpson, Cq_Median, richness) %>%
+				drop_na() %>%
+				cor(method = "spearman") %>%
+				print()
+			pca_res <- bact_data[[i]] %>%
+				drop_na(Cq_Median) %>%
+				select(invsimpson, richness) %>%
+				scale() %>%
+				prcomp()
+			pca_res %>%
+				summary() %>%
+				print()
+			test[[i]] <- bact_data[[i]]
+			test[[i]] <- test[[i]] %>%
+				drop_na(Cq_Median) %>%
+				mutate(
+					PC1 = pca_res$x[, 1],
+					PC2 = pca_res$x[, 2],
+					pH = as.numeric(scale(pH)),
+					Temp = as.numeric(scale(Temp)),
+					River_Gradient = as.numeric(scale(River_Gradient))
+				) %>%
+				relocate(
+					PC1, PC2,
+					.after = pH
+				)
 		}
-		r2_with <- getR2(mod_with)
-		r2_no   <- getR2(mod_no)
-	# Combine results into a comparison table
-		out <- tibble(
-		  Model     = c("With Temp", "Without Temp"),
-		  R2        = c(r2_with["R2"], r2_no["R2"]),
-		  Adj_R2    = c(r2_with["Adj_R2"], r2_no["Adj_R2"]),
-		  AICc      = c(aicc_with, aicc_no)
-		)
-		print(out)
-	# clean up
-		rm(mod_with)
-}
-
-{ # View Final PERMANOVA results ---
-	mod_no
-}
-
-{ # Catchment-level nMDS plot ----
-	# pick easily recognisable symbols
-	shape_vals <- c(
-		"Spring" = 16,
-		"Summer"    = 17,
-		"Autumn"  = 15,
-		"Winter"  = 18
-	)
-	
-	# run non-metric MDS (two dimensions)
-	set.seed(123)
-	fit <- metaMDS(
-		comm = bact_collapsed[[4]] %>% select_after("invsimpson"),
-		distance = "bray",
-		k = 2,
-		trymax = 100
-	)
-	
-	# combine ordination scores with the metadata
-	plot_df <- bact_collapsed[[4]] %>%
-		mutate(
-			MDS1 = fit$points[, 1],
-			MDS2 = fit$points[, 2]
-		)
-	
-	# 5. draw the map
-	p <- ggplot(
-		plot_df,
-			aes(
-				MDS1, MDS2,
-				colour = Season,
-				shape = Season
-			)
-		) +
-		geom_point(size = 3, alpha = 0.8) +
-		scale_shape_manual(values = shape_vals) +
-		theme_classic() +
-		labs(
-			title = NULL,
-			x = "nMDS Axis 1",
-			y = "nMDS Axis 2"
-		)
-	p <- p +
-		geom_mark_hull(
-			aes(fill = Season),
-			concavity = 5,
-			linetype = 0,
-			alpha = 0.08
-		)
-	
-	ggsave(
-		filename = paste0("outputs/plots/final/bacteria/Seasons.png"),
-		plot = p,
-		width = 9,
-		height = 5,
-		units = "in",
-		dpi = 1000
-	)
-	p
-}
-
-{ # db-RDA of each factor individually v1 ----
-	# Pull community matrix
-		comm <- bact_collapsed[[4]] %>% select_after("invsimpson")
-	# Store db-RDA plots
-		db_rda_plots <- list()
-	# Factors to test
-		factors <- c("Catchment", "Season", "River_Gradient", "Veg_Surround")
-	# Loop through each factor
-		for (var in factors) {
-	# If numeric, bin to factor for plotting
-		  var_data <- bact_collapsed[[4]][[var]]
-		  if (is.numeric(var_data)) {
-		    bact_collapsed[[4]][[paste0(var, "_binned")]] <- cut(var_data, breaks = 4)
-		    var_plot <- paste0(var, "_binned")
-		  } else {
-		    var_plot <- var
-		  }
-	# Model
-		  form <- as.formula(paste0("comm ~ ", var))
-		  mod <- capscale(form, data = bact_collapsed[[4]], distance = "bray")
-	# Scores
-		  scores_df <- bact_collapsed[[4]] %>%
-		    mutate(
-		      CAP1 = scores(mod, display = "sites")[, 1],
-		      CAP2 = scores(mod, display = "sites")[, 2],
-		      group = .data[[var_plot]]
-		    )
-	# Hulls
-		  hulls_df <- scores_df %>%
-		    group_by(group) %>%
-		    slice(chull(CAP1, CAP2))
-		  
-	# Plot
-		  p <- ggplot(scores_df, aes(CAP1, CAP2)) +
-		    geom_polygon(
-		      data = hulls_df,
-		      aes(fill = group, group = group),
-		      alpha = 0.08,
-		      colour = NA
-		    ) +
-		    geom_point(
-		      aes(colour = group, shape = group),
-		      size = 3,
-		      alpha = 0.8
-		    ) +
-		    theme_classic() +
-		    labs(
-		      x = "db-RDA Axis 1",
-		      y = "db-RDA Axis 2",
-		      title = paste("db-RDA:", var)
-		    ) +
-		    guides(fill = "none")  # hide fill legend if it duplicates colour
-		  
-	# Save
-		  ggsave(
-		    filename = paste0("outputs/plots/final/bacteria/dbRDA_", var, ".png"),
-		    plot = p,
-		    width = 9,
-		    height = 5,
-		    units = "in",
-		    dpi = 1000
-		  )
-		  
-		  db_rda_plots[[var]] <- p
-		}
-}
-
-{ # View v1 db-RDA plots ----
-		db_rda_plots$Catchment
-		db_rda_plots$Season
-		db_rda_plots$Veg_Surround
-		db_rda_plots$River_Gradient
-}
-
-{ # db-RDA of each factor individually v2 ----
-		alpha_max <- 0.4
-		alpha_min <- 0.2
-		density_cutoff_quantile <- 0.6
-		
-		db_rda_plots <- list()
-		factors <- c("Catchment", "Season", "River_Gradient", "Veg_Surround")
-		
-		for (var in factors) {
-		  var_data <- bact_collapsed[[4]][[var]]
-		  group_var <- if (is.numeric(var_data))
-		    cut(var_data, breaks = 4)
-		  else var_data
-		
-		  mod <- capscale(as.formula(paste0("comm ~ ", var)),
-		                 data = bact_collapsed[[4]], distance = "bray")
-		
-		  scores_df <- bact_collapsed[[4]] %>% transmute(
-		    CAP1 = scores(mod, display = "sites")[,1],
-		    CAP2 = scores(mod, display = "sites")[,2],
-		    group = group_var
-		  )
-		
-		  group_levels <- sort(unique(as.character(scores_df$group)))
-		  n_groups <- length(group_levels)
-		
-		  shape_vals <- setNames(21:(20+n_groups), group_levels)
-		  group_colors <- setNames(
-		    hcl(seq(15, 375, length.out = n_groups + 1)[-1], 100, 65),
-		    group_levels
-		  )
-		
-		  blur_layers <- scores_df %>%
-		    group_split(group, .keep = TRUE) %>%
-		    map(function(df) {
-		      this_group <- unique(as.character(df$group))
-		      ddata <- ggplot_build(
-		        ggplot(df, aes(CAP1, CAP2)) +
-		        stat_density_2d(geom = "tile", contour = FALSE, n = 150)
-		      )$data[[1]]
-		
-		      max_d <- max(ddata$density, na.rm = TRUE)
-		      cutoff <- quantile(ddata$density, density_cutoff_quantile, na.rm = TRUE)
-		
-		      stat_density_2d(
-		        data = df,
-		        aes(
-		          x = CAP1, y = CAP2,
-		          alpha = ifelse(
-		            after_stat(density) < cutoff, 0,
-		            alpha_min + (after_stat(density)-cutoff)/(max_d-cutoff)*(alpha_max-alpha_min)
-		          ),
-		          fill = this_group
-		        ),
-		        geom = "tile", contour = FALSE, n = 600,
-		        inherit.aes = FALSE, show.legend = FALSE
-		      )
-		    })
-		
-		  p <- ggplot(scores_df, aes(CAP1, CAP2)) +
-		    blur_layers +
-		    geom_point(aes(fill = group, shape = group),
-		               colour = "black", stroke = 0,
-		               size = 3, alpha = 1) +
-		    scale_shape_manual(values = shape_vals, name = NULL) +
-		    scale_fill_manual(values = group_colors, name = NULL) +
-		    scale_alpha_identity() +
-		    guides(
-		      fill = guide_legend(override.aes = list(
-		        shape = unname(shape_vals),
-		        fill = unname(group_colors),
-		        colour = "black",
-		        stroke = 0,
-		        size = 3,
-		        alpha = 1
-		      )),
-		      shape = "none"
-		    ) +
-		    theme_classic() +
-		    labs(x = "db-RDA Axis 1", y = "db-RDA Axis 2")
-		
-		  ggsave(
-		    paste0("outputs/plots/final/bacteria/dbRDA_", var, ".png"),
-		    plot = p, width = 9, height = 5, units = "in", dpi = 1000
-		  )
-		
-		  db_rda_plots[[var]] <- p
-		}
-}
-
-{ # View updated db-RDA plots ----
-	db_rda_plots$Season
-	db_rda_plots$Catchment
-	db_rda_plots$River_Gradient
-	db_rda_plots$Veg_Surround
 }
 	
 { # export and clean-up temp objects ----
 
 	# export the level 4 bact_data as a .csv
 		write_csv(
-			x = bact_collapsed[[1]],
-			file = "outputs/tables/bact_collapsed.csv"
+			x = bact_data[[1]],
+			file = "outputs/tables/bact_data.csv"
 		)
 	# remove individual dataframes
 		rm(
 			a_div, bact_meta, PCR_data, qPCR_data
 		)
-	
 }
 
 { # Check subsampling depth ----

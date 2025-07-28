@@ -210,9 +210,9 @@
 		}) |>
 			dplyr::bind_rows()
 	# export table
-		write_xlsx(
+		write.csv(
 			x = norm_tests$rawmetal,
-			path = "outputs/tables/distest_rawmetal.xlsx"
+			file = "outputs/tables/distest_rawmetal.xlsx"
 		)
 }
 
@@ -384,7 +384,7 @@
 	# Standardise metals to remove unit size effects
 		metals_z <- scale(metals)               # subtract mean, divide by sd
 	# Run Naive PCA on metals
-		pca_res <- prcomp(metals_z, center = FALSE, scale. = FALSE)
+		pca_res <- prcomp(metals_z, center = FALSE, scale = FALSE)
 	# Cumulative variance explained by the PCs
 		summary(pca_res)$importance[2:3,1:5]
 	# Choose how many PCs to keep
@@ -407,9 +407,9 @@
 			meta_pc[, paste0("PC", 1:keep)] ~
 				Catchment + Site %in% Catchment + year %in% Catchment + Season,
 			data = meta_pc,
-			permutations = 999,
 			by = "terms",
 			method = "euclidean",
+			strata = meta_pc$Site
 		)
 		print(perm)
 	# export
@@ -489,7 +489,9 @@
 }
 
 { # post-hoc to detect exactly HOW metal scores vary with each factor ----
-	pcs <- names(meta_pc) %>% keep(~ grepl("^PC\\d+$", .x))
+		pcs <- meta_pc %>%
+			select(PC1:paste0("PC", keep)) %>%
+			names()
 	
 	# ── fixed helper
 	kw_boxplot <- function(data, pc, factor){

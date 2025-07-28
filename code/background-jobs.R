@@ -4,25 +4,25 @@
 { # Packages ----
 	library(furrr)
 	library(future)
-	library(agricolae)
+#	library(agricolae)
 	library(vegan)
 	library(tidyverse)
 	library(permute)
-	library(FactoMineR)
-	library(factoextra)
-	library(writexl)
+#	library(FactoMineR)
+#	library(factoextra)
+#	library(writexl)
 	#	library(MASS)			# conflicts with dplyr
-	library(viridisLite)
+#	library(viridisLite)
 	#	library(fitdistrplus)	# requires MASS
-	library(mgcv)
-	library(car)      # For Levene's test
-	library(rstatix)  # For pairwise comparisons
-	library(lubridate)
+#	library(mgcv)
+#	library(car)      # For Levene's test
+#	library(rstatix)  # For pairwise comparisons
+#	library(lubridate)
 	library(ggforce)
 	library(ggpubr)
 }
 
-{ # Validate naive PCA loadings ----
+{ # Validate unbalanced PCA loadings ----
 	# reference rotation – enforce metal_cols order
 	ref_rot <- naive_loadings_df %>%
 		arrange(match(Metal, metal_cols)) %>%   # <<< new line
@@ -250,7 +250,7 @@
 { # validate naive bact-metal PERMANOVA (cross-catchment) ----
 	# uses CarnonRed_collapsed - minus Hayle and Cober due to insufficient sample size to accept the full formula for verification
 	for (i in 4) { # ready for more tax. levels if needed
-		min_n <- CarnonRed_collapsed[[i]] %>% count(Catchment) %>% pull(n) %>% min()
+		min_n <- CarnonRed_collapsed[[i]] %>% dplyr::count(Catchment) %>% pull(n) %>% min()
 		
 		## function that does one balanced draw + PERMANOVA
 		one_run <- function(n_sub = min_n) {
@@ -266,7 +266,7 @@
 			# 3. PERMANOVA with the full formula
 			mod <- adonis2(
 				samp_OTUs ~
-					Catchment + Season + pH + PC2,
+					Catchment + Season + PC2,
 				data = samp,
 				by = "terms",
 				method = "bray",
