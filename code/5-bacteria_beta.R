@@ -339,7 +339,7 @@ disp_summary <- disp_out %>%
 			s2 <- row$Site2
 			pair_label <- row$Pair
 			min_samps <- row$min_samps
-			map_dfr(1:100, function(iter) {
+			map_dfr(1:50, function(iter) {
 				pair_data <- bact_data[[4]] %>% 
 					filter(Site %in% c(s1, s2)) %>% 
 					group_by(Site) %>%
@@ -356,6 +356,8 @@ disp_summary <- disp_out %>%
 				tibble(
 					Catchment = i,
 					Pair = pair_label,
+					Site1 = s1,
+					Site2 = s2,
 					Iteration = iter,
 					R2 = mod$R2[1],
 					p = mod$`Pr(>F)`[1]
@@ -373,6 +375,8 @@ disp_summary <- disp_out %>%
 		summarised_results <- raw_results %>%
 			group_by(Catchment, Pair) %>%
 			summarise(
+				Site1 = first(Site1),
+				Site2 = first(Site2),
 				median_p = median(p),
 				prop_sig = mean(p < 0.05),
 				.groups = "drop"
@@ -380,10 +384,180 @@ disp_summary <- disp_out %>%
 	# apply Holm correction by catchment
 		corrected_results <- summarised_results %>%
 			group_by(Catchment) %>%
-			mutate(p_holm = p.adjust(median_p, method = "holm"))
+			mutate(p_holm = p.adjust(median_p, method = "holm")) %>%
+			ungroup()
 	# drop non-sig results
 		valid_results <- corrected_results %>%
 			filter(p_holm < 0.1 & prop_sig >= 0.8)
+}
+
+{ # ANCOMB2 Attempt. Terrible. ----
+bact_matrix <- bact_data[[4]] %>%
+	column_to_rownames(var = "Sample") %>%
+	select_after("invsimpson") %>%
+		as.data.frame()
+bact_meta <- bact_data[[4]] %>%
+	column_to_rownames(var = "Sample") %>%
+	select(Catchment, Site) %>%
+	as.data.frame()
+	
+output <- ancombc2(
+	data = bact_matrix,
+	taxa_are_rows = FALSE,
+	meta_data = bact_meta,
+	fix_formula = "Site",
+	rand_formula = "(1 | Catchment / Site)",
+	p_adj_method = "holm",
+	group = "Site",
+	prv_cut = 0.10,
+	lib_cut = 0,
+	pseudo_sens = TRUE,
+	struc_zero = TRUE,
+	neg_lb = TRUE,
+	global = TRUE,
+	pairwise = TRUE,
+	alpha = 0.05,
+	n_cl = 8
+)
+res_primary   <- output$res_prim
+res_global    <- output$res_global
+res_pairwise  <- output$res_pair
+
+ # attempt to fix non-convergence
+	# example: select the top 10 most abundant taxa
+taxa_to_test <- names(sort(colSums(bact_matrix), decreasing = TRUE))[1:10]
+
+pilot_counts <- bact_matrix[, taxa_to_test]
+pilot_meta   <- bact_meta
+
+pseudo = 1
+pilot_df <- pilot_counts %>%
+  as.data.frame() %>%
+  rownames_to_column("Sample") %>%
+  pivot_longer(cols = -Sample, names_to = "Taxon", values_to = "count") %>%
+  mutate(Y = log(count + pseudo)) %>%
+  left_join(bact_meta %>% rownames_to_column("Sample"), by = "Sample") %>%
+  mutate(Site = factor(Site), Catchment = factor(Catchment))
+
+library(lme4)
+pilot_mod <- lmer(Y ~ Site + (1 | Catchment / Site), data = pilot_df, REML = TRUE)
+
+check_model(pilot_mod)
+test_performance(pilot_mod)
+simulateResiduals(pilot_mod, plot = TRUE)
+
+is_singular <- isSingular(pilot_mod, tol = 1e-4)
+print(is_singular)
+
+library(performance)
+check_singularity(pilot_mod)  # term-level singularity report
+
+summary(pilot_mod)
+
+all_fits <- allFit(pilot_mod)
+summary(all_fits)
+
+ss <- summary(all_fits)
+ss$fixef
+ss$sdcor
+ss$llik
+}
+
+{ # ALDEx2 in series ----
+results_list <- list()
+	
+bact_matrix <- bact_data[[4]] %>%
+	column_to_rownames(var = "Sample") %>%
+	select_after("invsimpson") %>%
+	t()
+bact_meta <- bact_data[[4]] %>%
+	column_to_rownames(var = "Sample") %>%
+	select(Catchment, Site) %>%
+	as.data.frame()
+pairwise_signif <- valid_results %>%
+	select(Site1, Site2)
+
+for (i in 1:nrow(pairwise_signif)) {
+  s1 <- pairwise_signif$Site1[i]
+  s2 <- pairwise_signif$Site2[i]
+  
+  # Identify samples in these two site groups
+  sel <- bact_meta$Site %in% c(s1, s2)
+  samples <- rownames(bact_meta)[sel]
+  otu <- bact_matrix[, samples, drop = FALSE]
+  groups <- bact_meta$Site[sel] %>%
+  	droplevels() %>%
+  	as.numeric()
+  
+  # You may want to filter features with zero-sum or low prevalence
+  otu <- otu[rowSums(otu) > 0, , drop = FALSE]
+  
+  set.seed(123)
+  # Step 1: CLR with Monte Carlo sampling
+  x.clr <- aldex.clr(otu, conds = groups,
+                     mc.samples = 128,
+                     denom = "iqlr",
+                     verbose = FALSE)
+  
+  # Step 2: Kruskal-Wallis test across groups
+  x.kw <- aldex.kw(x.clr, verbose = TRUE)
+  
+  # Step 3: calculate effect sizes (with confidence intervals if desired)
+  x.effect <- aldex.effect(x.clr, CI = TRUE, verbose = TRUE)
+  
+  # Combine results
+out <- data.frame(
+	feature = rownames(x.kw),
+	kws.p = x.kw$kw.ep,
+	kws.q = x.kw$kw.eBH,
+	effect = x.effect$effect,
+	diff.btw = x.effect$diff.btw,
+	overlap = x.effect$overlap,
+	stringsAsFactors = FALSE
+)
+  # Order by effect size and FDR
+	  out <- out[ order(-abs(out$effect), out$kws.q), ]
+  
+  results_list[[paste0(s1, "_vs_", s2)]] <- out
+}
+
+# Access results for a given pair:
+results_list[["SiteA_vs_SiteB"]]
+}
+
+{ # ALDEx2 in parallel ----
+	plan(multisession, workers = availableCores())
+		process_pair <- function(s1, s2, bact_matrix, bact_meta) {
+			sel <- bact_meta$Site %in% c(s1, s2)
+			samples <- rownames(bact_meta)[sel]
+			otu <- bact_matrix[, samples, drop = FALSE]
+			groups <- as.numeric(droplevels(bact_meta$Site[sel]))
+			otu <- otu[rowSums(otu) > 0, , drop = FALSE]
+			set.seed(123)
+			x.clr    <- aldex.clr(otu, conds = groups, mc.samples = 128, denom = "iqlr", verbose = FALSE)
+			x.kw     <- aldex.kw(x.clr, verbose = TRUE)
+			x.effect <- aldex.effect(x.clr, CI = TRUE, verbose = TRUE)
+			out <- data.frame(
+				feature  = rownames(x.kw),
+				kws.p    = x.kw$kw.ep,
+				kws.q    = x.kw$kw.eBH,
+				effect   = x.effect$effect,
+				diff.btw = x.effect$diff.btw,
+				overlap  = x.effect$overlap,
+				stringsAsFactors = FALSE
+			)
+			out[order(-abs(out$effect), out$kws.q), ]
+		}
+results_list <- future_map2(
+  pairwise_signif$Site1,
+  pairwise_signif$Site2,
+  process_pair,
+  bact_matrix = bact_matrix,
+  bact_meta   = bact_meta,
+  .options    = furrr_options(seed = TRUE),
+  .progress = TRUE
+) %>%
+  set_names(paste0(pairwise_signif$Site1, "_vs_", pairwise_signif$Site2))
 }
 
 { # Catchment-level nMDS plot ----

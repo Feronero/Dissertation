@@ -174,6 +174,7 @@
 			select(
 				Batch,
 				Catchment,
+				Sample,
 				Site,
 				Season,
 				Altitude,
