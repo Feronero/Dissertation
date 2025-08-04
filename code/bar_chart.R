@@ -1,23 +1,26 @@
 ## bar chart ----
 {
 	## select bacterial columns
+	bact_cols <- bact_data[[1]] %>%
+		select_after("invsimpson") %>%
+		names()
 	bact_cols <- grep(
 		pattern = "^d__",
-		x = names(master[[1]]),
+		x = names(bact_data[[1]]),
 		value = TRUE
 	)
 	## converts raw sequence counts to relative abundance percentages
-	df_agg <- master[[1]] %>%
+	df_agg <- bact_data[[1]] %>%
 		mutate(across(
 			all_of(bact_cols),
 			~ .x / rowSums(across(all_of(bact_cols)), na.rm = TRUE) * 100
 		)) %>%
-		group_by(Catchment, Month) %>%
+		group_by(Catchment, Season) %>%
 		summarise(across(all_of(bact_cols), \(x) mean(x, na.rm = TRUE))) %>%
 		ungroup()
 	
 	top_phyla <- df_agg %>%
-		summarise(across(-c(Catchment, Month), mean)) %>%
+		summarise(across(-c(Catchment, Season), mean)) %>%
 		pivot_longer(everything(), names_to = "phylum", values_to = "abundance") %>%
 		arrange(desc(abundance)) %>%
 		slice_head(n = 10) %>%
@@ -29,32 +32,32 @@
 			Other = rowSums(
 				across(
 					!all_of(
-						c("Catchment", "Month", top_phyla)
+						c("Catchment", "Season", top_phyla)
 					)
 				)
 			)
 		) %>%
 		dplyr::select(
 			all_of(
-				c("Catchment", "Month", top_phyla, "Other")
+				c("Catchment", "Season", top_phyla, "Other")
 			)
 		) %>%
 		pivot_longer(
-			-c(Catchment, Month),
+			-c(Catchment, Season),
 			names_to = "phylum",
 			values_to = "abundance"
 		)
 	# Order seasons chronologically
-	season_order <- c("January", "April", "July", "October")
-	df_agg_top$Month <- factor(
-		x = df_agg_top$Month,
+	season_order <- c("Spring", "Summer", "Autumn", "Winter")
+	df_agg_top$Season <- factor(
+		x = df_agg_top$Season,
 		levels = season_order
 	)
 	
 	ggplot(
 		df_agg_top, 
 		aes(
-			x = Month,  # Use Month as x-axis (no interaction with Catchment)
+			x = Season,  # Use Month as x-axis (no interaction with Catchment)
 			y = abundance, 
 			fill = phylum
 		)
@@ -90,7 +93,7 @@
 		}
 	) +
 		labs(
-			x = "Month",  # Now x-axis shows months (rivers are in facets)
+			x = "Season",  # Now x-axis shows months (rivers are in facets)
 			y = "Relative Abundance (%)",
 			fill = "Phylum",
 			title = "Top 10 Bacterial Phyla by River and Season"

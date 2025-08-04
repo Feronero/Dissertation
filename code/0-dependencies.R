@@ -4,7 +4,7 @@ if (!require("pacman", quietly = TRUE)) {
 
 # Packages I want (CRAN first, then Bioconductor)
 pkgs <- c(
-	"devtools", "vegan", "tidyverse", "report", "lme4", "lmerTest", "permute",
+	"devtools", "vegan", "tidyverse", "report", "lmer4", "lmerTest", "permute",
 	"DHARMa", "ggforce", "ggpubr", "performance", "AICcPermanova", "furrr",
 	"future", "BiocManager", "conflicted"
 )
@@ -26,8 +26,6 @@ BiocManager::install("ALDEx2")
 BiocManager::install("BiocParallel")
 library(BiocParallel)
 library(ALDEx2)
-library(ANCOMBC)
-library(phyloseq)
 
 # set default packages for conflicting function calls. Calls intended for non-default packages must be specified with "::{package_name}" prefix
 # conflict_prefer("first", "dplyr")
@@ -42,7 +40,7 @@ library(phyloseq)
 # conflict_prefer("getData", "raster")
 # conflict_prefer("s", "mgcv")
 # conflict_prefer("gam", "mgcv")
-# conflicts_prefer(lmerTest::lmer)
+ conflicts_prefer(lmer4::lmer)
 
 
 # remove if needed

@@ -250,22 +250,24 @@
 	 		.groups = "drop"
 	 	)
 	 	
-	 metal_summary <- metal_wide %>% 
-	 	summarise(
-	 		across(
-	 			all_of(keyvals$metals),
-	 			list(
-	 				Actual   = ~sum(!is.na(.x)),
-	 				NA_count = ~sum(is.na(.x))
-	 			),
-	 			.names = "{.col}_{.fn}"
-	 		)
-	 	) %>% 
-	 	pivot_longer(
-	 		everything(),
-	 		names_to   = c("Metal", ".value"),
-	 		names_sep  = "_"
-	 	)
+metal_summary <- metal_wide %>%
+  pivot_longer(
+    cols = all_of(keyvals$metals),
+    names_to = "Metal",
+    values_to = "Value"
+  ) %>%
+  group_by(Metal) %>%
+  summarise(
+    Actual = sum(!is.na(Value)),
+    NA_count = sum(is.na(Value)),
+    Percentage = mean(!is.na(Value)) * 100
+  )
+
+complete_percentage <- metal_wide %>%
+  mutate(is_complete = complete.cases(select(., all_of(keyvals$metals)))) %>%
+  summarise(percent_complete = mean(is_complete) * 100) %>%
+  pull()
+
 }
 
 { # filter poorly-sampled metals to maximise the number of usable complete records ----
@@ -347,6 +349,14 @@
 		metal_iqr <- metal_iqr %>% drop_na()
 		metal_counts <- metal_counts %>% 
 			filter(if_all(everything(), ~ .x != 0))
+}
+
+{ # cor test the retained metals ----
+metal_wide %>%
+  select("Cadmium", "Iron", "Nickel", "Copper", "Manganese", "Zinc", "Magnesium") %>%
+  cor(method = "spearman", use = "pairwise.complete.obs") %>%
+		as.data.frame() %>%
+		write_csv(., "outputs/tables/corr_table_final.csv")
 }
 
 { # Export the dataframes ----
@@ -436,12 +446,6 @@
 				names_to = "PC",
 				values_to = "orig_loading"
 			)
-}
-
-{ # Are the new PCs significantly correlated? ----
-	cor.test(meta_pc$PC1, meta_pc$PC2, method = "spearman")
-	cor.test(meta_pc$PC1, meta_pc$PC3, method = "spearman")
-	cor.test(meta_pc$PC2, meta_pc$PC3, method = "spearman")
 }
 
 { # test naive PC values for over-dispersion across each factor ----

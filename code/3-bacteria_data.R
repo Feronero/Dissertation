@@ -228,6 +228,8 @@
 		     p_adjusted = p_adj_mat)
 }
 
+cor.test(bact_data[[1]]$DTM.km, bact_data[[1]]$Altitude, method = "spearman", exact = FALSE)
+
 { # Merge DTM and Altitude into single shared PC axis ----
 	# PCA combining DTM.km and Altitude
 		pca_result <- prcomp(
@@ -336,7 +338,7 @@
 		)
 	# remove individual dataframes
 		rm(
-			a_div, bact_meta, PCR_data, qPCR_data
+			a_div, bact_meta, PCR_data, qPCR_data, p_adj_mat, p_raw_mat, pca_res, pca_result, res, rho_mat
 		)
 }
 

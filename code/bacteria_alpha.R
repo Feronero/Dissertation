@@ -328,3 +328,7 @@ ggplot(d_long, aes(x = Value, y = PC2, color = Season)) +
 
 check_model(toggle)
 }
+
+{ # Simple group test
+	
+}
